@@ -1,0 +1,7 @@
+librosa>=0.10.1
+numpy>=1.24.0
+scipy>=1.10.0
+soundfile>=0.12.1
+pydub>=0.25.1
+madmom>=0.16.1; platform_system != "Windows"
+numba>=0.57.0

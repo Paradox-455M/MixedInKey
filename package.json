@@ -1,0 +1,79 @@
+{
+  "name": "mixed-in-ai",
+  "version": "1.0.0",
+  "description": "AI-powered audio analysis for DJs - detect key, BPM, cue points, and song structure",
+  "main": "src/main.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run start\" \"npm run watch\"",
+    "watch": "webpack --watch --mode development",
+    "build": "webpack --mode production",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "electron",
+    "audio",
+    "analysis",
+    "dj",
+    "music",
+    "key-detection",
+    "bpm",
+    "cue-points"
+  ],
+  "author": "Mixed In AI",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0",
+    "@babel/preset-react": "^7.22.0",
+    "babel-loader": "^9.1.0",
+    "concurrently": "^8.2.0",
+    "css-loader": "^6.8.0",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.0",
+    "html-webpack-plugin": "^5.5.0",
+    "style-loader": "^3.3.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-dropzone": "^14.2.0",
+    "wavesurfer.js": "^7.10.1",
+    "lucide-react": "^0.263.0",
+    "clsx": "^2.0.0"
+  },
+  "build": {
+    "appId": "com.mixedin-ai.app",
+    "productName": "Mixed In AI",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "src/backend", "to": "backend" },
+      { "from": "requirements.txt", "to": "requirements.txt" }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Audio"
+    }
+  }
+} 
