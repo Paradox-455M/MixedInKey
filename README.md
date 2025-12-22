@@ -1,3 +1,118 @@
+## Mixed In AI — DJ Analysis, Cues, and Hot Cues
+
+A cross‑platform Electron app for DJs that analyzes audio files and automatically detects musically significant information like cue points, musical key, BPM, and song structure — now with a robust Hot Cue system inspired by industry workflows.
+
+### Highlights
+
+- **AI Cue Intelligence**: Genre‑aware intro/drop detection, breakdowns, phrases, vocals, chorus/hook.
+- **Hot Cues (A–E)**: Mixed In Key–style mapping with spacing/backfill to reliably surface five musical anchors.
+- **Modular Pipeline**: Pluggable stages with a conflict‑aware orchestrator and selective beat‑snapping.
+- **Modern UI**: Clean, responsive interface with DJ Cues and Hot Cues side‑by‑side.
+
+
+## Hot Cues (A–E)
+
+Hot cues are derived from the final merged cue set and follow smart rules to give five musically useful anchors:
+
+- **A = Intro**: First structural intro/first phrase beat after silence (beat‑aligned).
+- **B = First Vocal / Verse**: First vocal before the main drop; fallback: first chorus.
+- **C = Chorus**: First chorus after the drop; fallback: next vocal.
+- **D = Drop**: Main energy peak, scored by confidence and position (prefers 35–60% of duration), beat‑snapped.
+- **E = Outro**: Last outro region; fallback: last phrase/end section.
+
+Additional guarantees:
+
+- **Alias matching**: Accepts common variants (e.g., `mix_in`, `hook`, `climax`, `mix_out`).  
+- **Minimum spacing**: Ensures ≥ 6s separation to avoid clustering.  
+- **Backfill**: If fewer than five anchors are found, fills remaining slots from high‑confidence candidates with spacing.  
+
+See implementation in `src/backend/pipeline/hotcue_stage.py`.
+
+
+## Pipeline Architecture
+
+The system uses a modular pipeline to compute, merge, and score cues:
+
+- `autocue_stage.py`: External intro/outro hints (graceful fallbacks if unavailable).
+- `aubio_stage.py`: Onset/beat detection (with `librosa` fallback).
+- `pyaudio_stage.py`: Segment boundaries via pyAudioAnalysis (RMS novelty fallback).
+- `analyzer_stage.py`: Wraps the analyzer for structural, vocal, drop candidates.
+- `chorus_hook_stage.py`: Harmonic centroid + spectral contrast to detect chorus/hook.
+- `bridge_energy_gap.py`: Detects energy valleys (bridge/energy gap).
+- `hotcue_stage.py`: Maps final cues into A–E Hot Cues.
+
+The **orchestrator** (`pipeline.py`) merges stage outputs with a hierarchical priority system, resolves conflicts by confidence and priority, applies selective beat‑snapping (intro/drop/chorus/hook/bridge/outro), enforces validity rules, and ensures minimal structure (fallback intro/outro). It returns:
+
+```json
+{
+  "cues": [...],
+  "hotcues": [...],
+  "beatgrid": [...],
+  "duration": 210.3,
+  "stages": {...},
+  "logs": [...]
+}
+```
+
+
+## Features
+
+- Musical key detection (Camelot format), BPM analysis, energy profiling.
+- Genre‑adaptive cue detection and AI‑explainable decisions (confidence, reason, tier).
+- Harmonic cue adjustment (tension peaks, stability windows).
+- MFCC vocal gate with multi‑signal gating (ZCR, bands, H/P ratio).
+- Global sanitization and cue balancing/humanization for clean results.
+
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js v16+
+- Python 3.8+
+
+### Install
+
+```bash
+npm install
+pip install -r requirements.txt
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+### CLI Test (Analyzer)
+
+```bash
+python -m src.backend.test_analyzer /path/to/track.mp3
+```
+
+
+## UI
+
+- The results view shows **DJ Cues** and **Hot Cues** in a two‑column layout.
+- Each Hot Cue (A–E) includes a play control to jump/preview that anchor.
+
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes and add tests where applicable
+4. Submit a PR
+
+
+## License
+
+MIT
+
+
+## Links
+
+- GitHub repository: `https://github.com/Paradox-455M/MixedInKey`
 # Mixed In AI 🎵
 
 An industry-level alternative to Mixed In Key — a cross-platform Electron desktop app for DJs that analyzes audio files and automatically detects musically significant information like cue points, musical key, BPM, and song structure.
