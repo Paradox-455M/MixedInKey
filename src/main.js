@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 
 let mainWindow;
@@ -51,22 +51,85 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
       throw new Error(`File does not exist: ${filePath}`);
     }
     
-    // Use virtual environment Python on macOS/Linux
-    let pythonPath;
-    if (process.platform === 'win32') {
-      pythonPath = 'python';
-    } else {
-      // Use the virtual environment Python
-      pythonPath = path.join(__dirname, '../venv/bin/python');
-      console.log(`🐍 [MAIN] Using Python at: ${pythonPath}`);
-      
-      // Check if Python exists
-      if (!fs.existsSync(pythonPath)) {
-        console.log(`❌ [MAIN] Python not found at: ${pythonPath}`);
-        // Fallback to system python
-        pythonPath = 'python3';
-        console.log(`🐍 [MAIN] Falling back to system python3`);
+    // Resolve Python interpreter with preflight import check (prefer a working system Python)
+    const envOverride = process.env.MIXEDIN_PYTHON && String(process.env.MIXEDIN_PYTHON).trim();
+    const systemCandidates = process.platform === 'win32'
+      ? ['python', 'python3']
+      : ['/usr/bin/python3', 'python3', 'python'];
+    const venvCandidates = process.platform === 'win32'
+      ? [
+          path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe'),
+          path.join(__dirname, '..', 'venv', 'Scripts', 'python3.exe')
+        ]
+      : [
+          path.join(__dirname, '..', 'venv', 'bin', 'python3'),
+          path.join(__dirname, '..', 'venv', 'bin', 'python')
+        ];
+
+    const candidates = [envOverride, ...systemCandidates, ...venvCandidates].filter((p) => !!p);
+
+    function getRequirementsPath() {
+      // In dev tree
+      const devReq = path.join(__dirname, '..', 'requirements.txt');
+      if (fs.existsSync(devReq)) return devReq;
+      // In packaged app resources
+      const packaged = process.resourcesPath ? path.join(process.resourcesPath, 'requirements.txt') : null;
+      if (packaged && fs.existsSync(packaged)) return packaged;
+      return null;
+    }
+
+    function preflightPython(p) {
+      try {
+        const script = 'import os; os.environ.setdefault("OPENBLAS_NUM_THREADS","1"); os.environ.setdefault("OMP_NUM_THREADS","1"); import numpy as _np; import soundfile as _sf; import librosa as _lb; print("ok")';
+        const res = spawnSync(p, ['-c', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+        if (res && res.status === 0 && String(res.stdout || '').toString().includes('ok')) {
+          return true;
+        }
+      } catch (e) {
+        // ignore
       }
+      return false;
+    }
+
+    function attemptInstallDependencies(p) {
+      const reqPath = getRequirementsPath();
+      if (!reqPath) return false;
+      try {
+        console.log(`📦 [MAIN] Installing Python deps with ${p} -m pip install -r ${reqPath}`);
+        const install = spawnSync(p, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', reqPath], {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        console.log(`📦 [MAIN] pip install status: ${install.status}`);
+        if (install.status === 0) {
+          // Re-test imports
+          return preflightPython(p);
+        }
+      } catch (e) {
+        console.log('❌ [MAIN] pip install attempt failed:', e.message);
+      }
+      return false;
+    }
+
+    let pythonPath = null;
+    let venvBinPath = null;
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const exists = candidate.includes(path.sep) ? fs.existsSync(candidate) : true;
+      if (!exists) continue;
+      if (preflightPython(candidate) || attemptInstallDependencies(candidate)) {
+        pythonPath = candidate;
+        if (candidate.includes(`${path.sep}venv${path.sep}`)) {
+          venvBinPath = path.dirname(candidate);
+        }
+        break;
+      }
+    }
+
+    if (pythonPath) {
+      console.log(`🐍 [MAIN] Using Python at: ${pythonPath}`);
+    } else {
+      console.log('❌ [MAIN] No working Python interpreter found for imports.');
+      throw new Error('No working Python interpreter found. Please ensure Python 3 and required packages are installed, or include the project venv.');
     }
     
     // Support both packaged extraResources and dev tree
@@ -92,9 +155,18 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
     
     return new Promise((resolve, reject) => {
       console.log(`🚀 [MAIN] Spawning Python process with args: [${scriptPath}, ${filePath}]`);
+      const envPath = venvBinPath ? `${venvBinPath}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH || ''}` : process.env.PATH;
       const pythonProcess = spawn(pythonPath, [scriptPath, filePath], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONUNBUFFERED: '1' }
+        env: {
+          ...process.env,
+          PATH: envPath,
+          VIRTUAL_ENV: venvBinPath ? path.join(__dirname, '..', 'venv') : process.env.VIRTUAL_ENV,
+          PYTHONUNBUFFERED: '1',
+          PYTHONIOENCODING: 'utf-8',
+          NUMBA_NUM_THREADS: '1',
+          NUMBA_CACHE_DIR: path.join(app.getPath('userData') || __dirname, 'numba_cache')
+        }
       });
       
       let result = '';
@@ -143,7 +215,8 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
         } else {
           console.log(`❌ [MAIN] Python process failed with code ${code}`);
           console.log(`📄 [MAIN] Error output: ${error}`);
-          reject(new Error(`Python process failed with code ${code}: ${error}`));
+          const hint = 'Ensure Python 3 with numpy/librosa/soundfile is installed or use the provided venv. You can run: venv/bin/pip install -r requirements.txt';
+          reject(new Error(`Python process failed (code ${code}). ${error || ''} ${hint}`));
         }
       });
       

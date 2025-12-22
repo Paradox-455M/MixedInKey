@@ -71,6 +71,8 @@ class EnergyAnalyzer:
 
             # Calculate energy profile over structural segments, normalized per track
             energy_profile = self._calculate_energy_profile(y, sr)
+            # Calculate continuous energy curve over entire track for line graph
+            energy_curve = self._compute_energy_curve(y, sr)
 
             return {
                 'overall_energy': round(float(overall_energy), 2),
@@ -85,12 +87,53 @@ class EnergyAnalyzer:
                     'dynamic_energy': float(dynamic_energy)
                 },
                 'energy_profile': energy_profile,
+                'energy_curve': energy_curve,
                 'energy_peaks': self._find_energy_peaks(energy_profile),
                 'energy_valleys': self._find_energy_valleys(energy_profile)
             }
             
         except Exception as e:
             raise Exception(f"Energy analysis failed: {str(e)}")
+
+    def _compute_energy_curve(self, y: np.ndarray, sr: int) -> List[Dict]:
+        """Return time-series energy curve normalized to 1-10, ~400 points max.
+
+        Uses short-time RMS in dB with smoothing and robust percentile scaling.
+        """
+        try:
+            hop = 512
+            rms = librosa.feature.rms(y=y, hop_length=hop)[0]
+            # Convert to dB-like scale and smooth
+            rms_db = 20 * np.log10(rms + 1e-8)
+            from scipy import ndimage
+            rms_db = ndimage.gaussian_filter1d(rms_db, sigma=3.0)
+
+            # Normalize using 5th-95th percentiles
+            p5, p95 = np.percentile(rms_db, [5, 95])
+            if p95 > p5:
+                norm = (rms_db - p5) / (p95 - p5)
+            else:
+                norm = np.zeros_like(rms_db)
+            norm = np.clip(norm, 0.0, 1.0)
+
+            # Map to 1..10
+            energy_1_10 = 1.0 + norm * 9.0
+
+            # Decimate to ~400 points for UI
+            max_points = 400
+            step = int(max(1, np.ceil(len(energy_1_10) / max_points)))
+            frames = np.arange(0, len(energy_1_10), step)
+            times = librosa.frames_to_time(frames, sr=sr, hop_length=hop)
+
+            curve: List[Dict] = []
+            for i, f in enumerate(frames):
+                curve.append({
+                    'time': float(times[i]),
+                    'energy': float(np.round(energy_1_10[f], 2))
+                })
+            return curve
+        except Exception:
+            return []
 
     def _calculate_rms_energy(self, y: np.ndarray, sr: int) -> float:
         """RMS energy normalized per signal (0-1)."""
@@ -107,8 +150,9 @@ class EnergyAnalyzer:
     def _calculate_perceptual_loudness(self, y: np.ndarray, sr: int) -> float:
         """Approximate perceptual loudness (0-1) using mel-spectrogram and A-weighting."""
         try:
-            S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=64, fmin=20, fmax=16000, power=2.0)
-            freqs = librosa.mel_frequencies(n_mels=64, fmin=20, fmax=16000)
+            safe_fmax = float(min(16000.0, max(200.0, (sr / 2.0) - 100.0)))
+            S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=64, fmin=20, fmax=safe_fmax, power=2.0)
+            freqs = librosa.mel_frequencies(n_mels=64, fmin=20, fmax=safe_fmax)
             S_dbA = librosa.perceptual_weighting(S, freqs)
             loud_db = float(np.mean(S_dbA))
             # Normalize from [-60, 0] dB to [0,1]

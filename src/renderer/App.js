@@ -1,7 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import WaveSurfer from 'wavesurfer.js';
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { 
   Upload, 
   Music, 
@@ -20,6 +18,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import './styles.css';
+import HotCueCard from './HotCueCard';
 
 // Waveform Visualization Component
 const WaveformVisualization = ({ waveformData, cuePoints, currentTime, duration, onCueClick, getCueColor }) => {
@@ -150,52 +149,13 @@ const App = () => {
   const [analysis, setAnalysis] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState(null);
-  const [waveform, setWaveform] = useState(null);
-  const waveformRef = useRef(null);
-  const wavesurferRef = useRef(null);
-  const regionsRef = useRef(null);
+  const waveformRef = useRef(null); // retained for click-to-seek support removal
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Initialize WaveSurfer
-  useEffect(() => {
-    if (waveformRef.current && currentFile) {
-      if (wavesurferRef.current) {
-        wavesurferRef.current.destroy();
-      }
-
-      const wavesurfer = WaveSurfer.create({
-        container: waveformRef.current,
-        waveColor: '#8b5cf6',
-        progressColor: '#a855f7',
-        cursorColor: '#ffffff',
-        barWidth: 2,
-        barRadius: 3,
-        cursorWidth: 1,
-        height: 120,
-        barGap: 3,
-        responsive: true,
-      });
-      // Register regions plugin (used for vertical cue markers)
-      try {
-        const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
-        regionsRef.current = regions;
-      } catch (e) {
-        console.warn('[FRONTEND] Failed to register regions plugin:', e);
-      }
-      wavesurfer.load(currentFile.path);
-      wavesurferRef.current = wavesurfer;
-      setWaveform(wavesurfer);
-
-      return () => {
-        if (wavesurferRef.current) {
-          wavesurferRef.current.destroy();
-        }
-      };
-    }
-  }, [currentFile]);
+  // Removed WaveSurfer initialization (no external waveform component)
 
   // Handle file drop
   const onDrop = useCallback(async (acceptedFiles) => {
@@ -223,28 +183,7 @@ const App = () => {
       console.log('[FRONTEND] Analysis result received:', result);
       setAnalysis(result);
       
-      // Add cue point markers to waveform
-      if (regionsRef.current && result.cue_points) {
-        try {
-          // Clear existing regions if supported
-          if (typeof regionsRef.current.clearRegions === 'function') {
-            regionsRef.current.clearRegions();
-          }
-          result.cue_points.forEach((cue) => {
-            const t = Math.max(0, cue.time || 0);
-            regionsRef.current.addRegion({
-              start: t,
-              end: t + 0.01,
-              content: cue.name || '',
-              color: 'rgba(139, 92, 246, 0.7)',
-              drag: false,
-              resize: false
-            });
-          });
-        } catch (e) {
-          console.warn('[FRONTEND] Unable to add markers:', e);
-        }
-      }
+      // No waveform markers (component removed)
     } catch (err) {
       console.error('[FRONTEND] Analysis error:', err);
       console.error('[FRONTEND] Error message:', err.message);
@@ -380,6 +319,14 @@ const App = () => {
     }
   };
 
+  const handleHotCuePlay = (cue) => {
+    if (!cue) return;
+    seekToTime(cue.time || 0);
+    if (!isPlaying) {
+      playAudio();
+    }
+  };
+
   // Format time
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -390,18 +337,13 @@ const App = () => {
   // Get key display name
   const getKeyDisplay = (key) => {
     const keyMap = {
-      '8A': 'A♭ Major', '8B': 'A♭ Minor',
-      '9A': 'A Major', '9B': 'A Minor',
-      '10A': 'B♭ Major', '10B': 'B♭ Minor',
-      '11A': 'B Major', '11B': 'B Minor',
-      '12A': 'C Major', '12B': 'C Minor',
-      '1A': 'C♯ Major', '1B': 'C♯ Minor',
-      '2A': 'D Major', '2B': 'D Minor',
-      '3A': 'E♭ Major', '3B': 'E♭ Minor',
-      '4A': 'E Major', '4B': 'E Minor',
-      '5A': 'F Major', '5B': 'F Minor',
-      '6A': 'F♯ Major', '6B': 'F♯ Minor',
-      '7A': 'G Major', '7B': 'G Minor'
+      // A = minor, B = major
+      '1A': 'A♭ Minor', '2A': 'E♭ Minor', '3A': 'B♭ Minor', '4A': 'F Minor',
+      '5A': 'C Minor', '6A': 'G Minor', '7A': 'D Minor', '8A': 'A Minor',
+      '9A': 'E Minor', '10A': 'B Minor', '11A': 'F♯ Minor', '12A': 'C♯ Minor',
+      '1B': 'B Major', '2B': 'F♯ Major', '3B': 'D♭ Major', '4B': 'A♭ Major',
+      '5B': 'E♭ Major', '6B': 'B♭ Major', '7B': 'F Major', '8B': 'C Major',
+      '9B': 'G Major', '10B': 'D Major', '11B': 'A Major', '12B': 'E Major'
     };
     return keyMap[key] || key;
   };
@@ -435,7 +377,14 @@ const App = () => {
       'outro': 'Optimal mix-out point - track energy decreases, perfect for transitions.',
       'vocal': 'Main vocal section - great for harmonic mixing and key matching.',
       'chorus': 'High-energy chorus section with full arrangement.',
-      'verse': 'Vocal verse section with supporting elements.'
+      'verse': 'Vocal verse section with supporting elements.',
+      // normalized backend synonyms
+      'vocal_entry': 'Main vocal section - great for harmonic mixing and key matching.',
+      'breakdown_start': 'Lower energy section - perfect for smooth mixing and blending.',
+      'build_up_start': 'Energy rising into a peak - prepare transition.',
+      'chorus_start': 'High-energy chorus section with full arrangement.',
+      'chorus_end': 'Chorus resolution - good transition window.',
+      'outro_start': 'Optimal mix-out point - track energy decreases, perfect for transitions.'
     };
     return descriptions[cue.type] || 'Key mixing point in the track.';
   };
@@ -448,9 +397,57 @@ const App = () => {
       'outro': '#6366f1',  // Blue - end
       'vocal': '#8b5cf6',  // Purple - vocal
       'chorus': '#ec4899', // Pink - chorus
-      'verse': '#06b6d4'   // Cyan - verse
+      'verse': '#06b6d4',  // Cyan - verse
+      // synonyms from backend
+      'vocal_entry': '#8b5cf6',
+      'breakdown_start': '#f59e0b',
+      'build_up_start': '#f97316',
+      'chorus_start': '#ec4899',
+      'chorus_end': '#a78bfa',
+      'outro_start': '#6366f1'
     };
     return colors[cue.type] || '#8b5cf6';
+  };
+
+  // Choose the best available energy curve; fallback to waveform or segment profile
+  const getEnergyCurve = () => {
+    const curve = analysis?.energy_analysis?.energy_curve;
+    if (curve && curve.length > 1) return curve;
+    // Fallback 1: build from waveform_data (normalized 0..1 -> 1..10)
+    if (analysis?.waveform_data?.length && analysis?.duration) {
+      const data = analysis.waveform_data;
+      const maxVal = Math.max(...data, 1e-6);
+      const maxPoints = 400;
+      const step = Math.max(1, Math.floor(data.length / maxPoints));
+      const result = [];
+      for (let i = 0; i < data.length; i += step) {
+        const energy01 = Math.min(1, data[i] / maxVal);
+        const energy = 1 + energy01 * 9;
+        const time = (i / data.length) * analysis.duration;
+        result.push({ time, energy: Number(energy.toFixed(2)) });
+      }
+      return result;
+    }
+    // Fallback 2: interpolate from energy_profile segments
+    const profile = analysis?.energy_analysis?.energy_profile;
+    if (profile && profile.length > 0 && analysis?.duration) {
+      const result = [];
+      const total = analysis.duration;
+      const maxPoints = 200;
+      for (let i = 0; i < profile.length; i++) {
+        const seg = profile[i];
+        const mid = Math.max(0, Math.min(total, (seg.start_time + seg.end_time) / 2));
+        result.push({ time: mid, energy: Number((seg.energy || 5).toFixed(2)) });
+      }
+      // sort and optionally densify
+      result.sort((a, b) => a.time - b.time);
+      if (result.length > maxPoints) {
+        const step = Math.ceil(result.length / maxPoints);
+        return result.filter((_, idx) => idx % step === 0);
+      }
+      return result;
+    }
+    return [];
   };
 
   return (
@@ -517,8 +514,24 @@ const App = () => {
                 </div>
               ) : analysis ? (
                 <>
+                  {/* Summary Table */}
+                  <div className="summary-table">
+                    <div className="summary-row summary-header">
+                      <div className="summary-col">Title</div>
+                      <div className="summary-col">BPM</div>
+                      <div className="summary-col">Key</div>
+                      <div className="summary-col">Camelot</div>
+                    </div>
+                    <div className="summary-row">
+                      <div className="summary-col">{currentFile?.name || analysis.file_path?.split('/').pop()}</div>
+                      <div className="summary-col">{analysis.bpm}</div>
+                      <div className="summary-col">{getKeyDisplay(analysis.key)}</div>
+                      <div className="summary-col">{analysis.key}</div>
+                    </div>
+                  </div>
+
                   {/* Basic Info Cards */}
-                  <div className="info-cards">
+                  {/* <div className="info-cards">
                     <div className="info-card">
                       <div className="card-icon">
                         <Clock size={20} />
@@ -538,14 +551,10 @@ const App = () => {
                         <div className="card-value">{getKeyDisplay(analysis.key)}</div>
                       </div>
                     </div>
-                  </div>
+                  </div> */}
 
-                  {/* Interactive Waveform */}
+                  {/* Audio Controls */}
                   <div className="waveform-section">
-                    <h3 className="section-title">
-                      <Volume2 size={20} />
-                      Interactive Waveform
-                    </h3>
                     <div className="waveform-container">
                       <div className="waveform-controls">
                         <button 
@@ -559,22 +568,7 @@ const App = () => {
                           {formatTime(currentTime)} / {formatTime(duration)}
                         </div>
                       </div>
-                      
-                      <div className="waveform-display" onClick={handleWaveformClick} ref={waveformRef}>
-                        {analysis.waveform_data && (
-                          <WaveformVisualization 
-                            waveformData={analysis.waveform_data}
-                            cuePoints={analysis.cue_points}
-                            currentTime={currentTime}
-                            duration={analysis.duration}
-                            onCueClick={handleCuePointClick}
-                            getCueColor={getCueColor}
-                          />
-                        )}
-                      </div>
                     </div>
-                    
-                    {/* Audio Element */}
                     <audio
                       ref={audioRef}
                       src={`file://${analysis.file_path}`}
@@ -582,40 +576,53 @@ const App = () => {
                     />
                   </div>
 
-                  {/* Cue Points */}
-                  <div className="cue-points-section">
-                    <h3 className="section-title">DJ Cue Points</h3>
-                    <div className="cue-points">
-                      {analysis.cue_points && analysis.cue_points.map((cue, index) => (
-                        <div 
-                          key={index} 
-                          className="cue-point-card clickable" 
-                          style={{ borderLeftColor: getCueColor(cue) }}
-                          onClick={() => handleCuePointClick(cue)}
-                        >
-                          <div className="cue-header">
-                            <div className="cue-icon" style={{ backgroundColor: getCueColor(cue) }}>
-                              <FileAudio size={16} />
-                            </div>
-                            <div className="cue-info">
-                              <div className="cue-name">{cue.name}</div>
-                              <div className="cue-time">
-                                <Clock size={12} />
-                                {formatTime(cue.time)}
+                  {/* Cue Columns: DJ Cues (left) + Hot Cues (right) */}
+                  <div className="cue-columns">
+                    {/* LEFT: DJ Cues */}
+                    <div>
+                      <h3 className="section-title">DJ Cue Points</h3>
+                      <div className="cue-points">
+                        {analysis.cue_points && analysis.cue_points.map((cue, index) => (
+                          <div 
+                            key={index} 
+                            className="cue-point-card clickable" 
+                            style={{ borderLeftColor: getCueColor(cue) }}
+                            onClick={() => handleCuePointClick(cue)}
+                          >
+                            <div className="cue-header">
+                              <div className="cue-icon" style={{ backgroundColor: getCueColor(cue) }}>
+                                <FileAudio size={16} />
+                              </div>
+                              <div className="cue-info">
+                                <div className="cue-name">{cue.name}</div>
+                                <div className="cue-time">
+                                  <Clock size={12} />
+                                  {formatTime(cue.time)}
+                                </div>
+                              </div>
+                              <div className="cue-type-badge" style={{ backgroundColor: getCueColor(cue) }}>
+                                {cue.type.toUpperCase()}
+                              </div>
+                              <div className="play-cue-button">
+                                <Play size={12} />
                               </div>
                             </div>
-                            <div className="cue-type-badge" style={{ backgroundColor: getCueColor(cue) }}>
-                              {cue.type.toUpperCase()}
-                            </div>
-                            <div className="play-cue-button">
-                              <Play size={12} />
+                            <div className="cue-description">
+                              {getCueDescription(cue)}
                             </div>
                           </div>
-                          <div className="cue-description">
-                            {getCueDescription(cue)}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Hot Cues */}
+                    <div>
+                      <h3 className="section-title">Hot Cues</h3>
+                      <div className="cue-points">
+                        {Array.isArray(analysis.hotcues) && analysis.hotcues.map((h, index) => (
+                          <HotCueCard key={index} slot={h.slot} cue={h.cue} onPlay={handleHotCuePlay} />
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -633,28 +640,88 @@ const App = () => {
                         </div>
                         
                         {/* Energy Profile Chart */}
-                        {analysis.energy_analysis.energy_profile && analysis.energy_analysis.energy_profile.length > 0 && (
+                        {(() => {
+                          const curve = getEnergyCurve();
+                          return curve && curve.length > 1;
+                        })() && (
                           <div className="energy-profile-chart">
                             <h4 className="chart-title">Energy Profile</h4>
-                            <div className="energy-bars-container" style={{ display: 'flex', alignItems: 'end', gap: '0.5rem' }}>
-                              {analysis.energy_analysis.energy_profile.map((segment, index) => {
-                                const segDuration = Math.max(0.25, (segment.end_time - segment.start_time));
-                                const totalDuration = Math.max(1, analysis.duration || segment.end_time);
-                                const widthPct = Math.min(25, (segDuration / totalDuration) * 100); // cap width per bar
-                                const heightPct = Math.max(5, Math.min(100, (segment.energy / 10) * 100));
-                                return (
-                                  <div key={index} className="energy-bar-wrapper" style={{ flex: '0 0 auto', width: `${widthPct}%` }}>
-                                    <div className="energy-bar-container">
-                                      <div
-                                        className="energy-bar-fill"
-                                        style={{ height: `${heightPct}%`, backgroundColor: getEnergyColor(segment.energy) }}
-                                      ></div>
+                            <div className="energy-line-container">
+                              {/* Y grid lines */}
+                              {[2,4,6,8,10].map((tick) => (
+                                <div key={`grid-${tick}`} className="energy-grid-line" style={{ bottom: `${(tick/10)*100}%` }}>
+                                  <div className="energy-grid-label">{tick}</div>
+                                </div>
+                              ))}
+                              {/* Polyline path over normalized coordinates */}
+                              <svg className="energy-line-svg" preserveAspectRatio="none" viewBox="0 0 1000 100">
+                                <defs>
+                                  <linearGradient id="energy-gradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#a855f7" stopOpacity="0.35" />
+                                    <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+                                  </linearGradient>
+                                </defs>
+                                {(() => {
+                                  const curve = getEnergyCurve();
+                                  const normPoints = curve.map(pt => {
+                                    const x = Math.max(0, Math.min(1, (pt.time || 0) / (analysis.duration || 1)));
+                                    const y = Math.max(0, Math.min(1, (pt.energy || 1) / 10));
+                                    return { x: x * 1000, y: (1 - y) * 100 };
+                                  });
+                                  if (normPoints.length === 0) return null;
+                                  const polyPoints = normPoints.map(p => `${p.x},${p.y}`).join(' ');
+                                  const areaPoints = `0,100 ${polyPoints} 1000,100`;
+                                  return (
+                                    <>
+                                      <polygon className="energy-area" points={areaPoints} fill="url(#energy-gradient)" />
+                                      <polyline className="energy-polyline" points={polyPoints} />
+                                      {/* Cue markers */}
+                                      <g className="energy-markers">
+                                        {analysis.cue_points && analysis.cue_points.map((cue, idx) => {
+                                          const t = Math.max(0, Math.min(analysis.duration || 1, cue.time || 0));
+                                          const xn = (t / (analysis.duration || 1));
+                                          // nearest energy value
+                                          const curveData = getEnergyCurve();
+                                          let nearest = curveData[0];
+                                          let minDiff = Math.abs((nearest?.time || 0) - t);
+                                          for (let i = 1; i < curveData.length; i++) {
+                                            const d = Math.abs((curveData[i].time || 0) - t);
+                                            if (d < minDiff) { nearest = curveData[i]; minDiff = d; }
+                                          }
+                                          const yn = Math.max(0, Math.min(1, ((nearest?.energy || 1) / 10)));
+                                          const cx = xn * 1000;
+                                          const cy = (1 - yn) * 100;
+                                          const color = getCueColor(cue);
+                                          return (
+                                            <g key={idx}>
+                                              <circle className="energy-marker" cx={cx} cy={cy} r={2.8} fill={color} />
+                                              <circle className="energy-marker-outline" cx={cx} cy={cy} r={3.6} fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="0.8" />
+                                              <title>{`${cue.name} • ${cue.type.toUpperCase()} • ${formatTime(t)} • Energy ${nearest?.energy?.toFixed?.(2) || ''}`}</title>
+                                            </g>
+                                          );
+                                        })}
+                                      </g>
+                                    </>
+                                  );
+                                })()}
+                              </svg>
+                            </div>
+                            {/* Timeline ticks */}
+                            <div className="energy-timeline">
+                              {(() => {
+                                const ticks = [];
+                                const step = (analysis.duration || 0) > 600 ? 60 : 30;
+                                const count = Math.floor((analysis.duration || 0) / step) + 1;
+                                for (let i = 0; i < count; i++) {
+                                  const t = i * step;
+                                  ticks.push(
+                                    <div key={`tick-${i}`} className="energy-tick" style={{ left: `${(t / (analysis.duration || 1)) * 100}%` }}>
+                                      <div className="energy-tick-label">{formatTime(t)}</div>
                                     </div>
-                                    <div className="energy-bar-label">{segment.name}</div>
-                                    <div className="energy-bar-time">({formatTime(segment.start_time)})</div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                }
+                                return ticks;
+                              })()}
                             </div>
                           </div>
                         )}
@@ -756,14 +823,7 @@ const App = () => {
               ) : null}
             </div>
 
-            {/* Waveform Panel */}
-            <div className="waveform-container">
-              <div className="panel-title">
-                <Play size={20} />
-                Waveform
-              </div>
-              <div ref={waveformRef} className="waveform" onClick={handleWaveformClick} />
-            </div>
+            {/* Removed right-side waveform panel to simplify UI */}
           </div>
         )}
       </main>

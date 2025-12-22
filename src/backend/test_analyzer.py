@@ -1,3 +1,44 @@
+import sys
+import json
+import os
+
+# Ensure we can import analyzer from src/backend
+CURRENT_DIR = os.path.dirname(__file__)
+BACKEND_DIR = os.path.join(CURRENT_DIR, "src", "backend")
+if BACKEND_DIR not in sys.path:
+    sys.path.append(BACKEND_DIR)
+
+from analyzer import AudioAnalyzer
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python test_analyzer.py <audio_file>")
+        sys.exit(1)
+
+    file_path = sys.argv[1]
+    analyzer = AudioAnalyzer()
+    result = analyzer.analyze_audio(file_path)
+
+    if not result or 'cue_points' not in result:
+        print("❌ Analysis failed or no cue points found.")
+        sys.exit(1)
+
+    print("\n🎧 DJ Cue Points\n----------------------")
+    for cue in result['cue_points']:
+        t = cue['time']
+        name = cue['name']
+        ctype = cue['type']
+        minutes = int(t // 60)
+        seconds = int(t % 60)
+        print(f"{name:15s}  [{ctype:10s}]  →  {minutes:02d}:{seconds:02d}")
+
+    print("\n✅ Done. Cues printed in order of appearance.\n")
+
+
+if __name__ == "__main__":
+    main()
+
 #!/usr/bin/env python3
 """
 Test script for the Mixed In AI audio analyzer.
@@ -9,7 +50,7 @@ import os
 import numpy as np
 import soundfile as sf
 import tempfile
-from src.backend.analyzer import AudioAnalyzer
+from analyzer import AudioAnalyzer
 
 def create_test_audio(duration=10, sample_rate=44100):
     """Create a test audio file with a simple sine wave."""
@@ -84,7 +125,7 @@ def test_key_detection():
     print("-" * 30)
     
     try:
-        from src.backend.tools.key_detection import KeyDetector
+        from tools.key_detection import KeyDetector
         
         # Create test audio (A major scale)
         audio, sr = create_test_audio(duration=5)
@@ -113,7 +154,7 @@ def test_rhythm_analysis():
     print("-" * 30)
     
     try:
-        from src.backend.tools.rhythm_analysis import RhythmAnalyzer
+        from tools.rhythm_analysis import RhythmAnalyzer
         
         # Create test audio with beat
         duration = 10

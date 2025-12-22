@@ -9,27 +9,24 @@ from typing import Tuple, Dict, List
 
 class KeyDetector:
     def __init__(self):
-        # Align mapping with UI: Major=A, Minor=B, C Major = 12A, C Minor = 12B
+        # Camelot mapping (industry standard): A = minor, B = major
         self.camelot_wheel = {
-            'C': '12A', 'C#': '1A', 'D': '2A', 'D#': '3A', 'E': '4A', 'F': '5A',
-            'F#': '6A', 'G': '7A', 'G#': '8A', 'A': '9A', 'A#': '10A', 'B': '11A',
-            'c': '12B', 'c#': '1B', 'd': '2B', 'd#': '3B', 'e': '4B', 'f': '5B',
-            'f#': '6B', 'g': '7B', 'g#': '8B', 'a': '9B', 'a#': '10B', 'b': '11B'
+            # Major (B)
+            'C': '8B', 'C#': '3B', 'D': '10B', 'D#': '5B', 'E': '12B', 'F': '7B',
+            'F#': '2B', 'G': '9B', 'G#': '4B', 'A': '11B', 'A#': '6B', 'B': '1B',
+            # Minor (A)
+            'c': '5A', 'c#': '12A', 'd': '7A', 'd#': '2A', 'e': '9A', 'f': '4A',
+            'f#': '11A', 'g': '6A', 'g#': '1A', 'a': '8A', 'a#': '3A', 'b': '10A'
         }
         
+        # Display names with A=minor, B=major
         self.key_names = {
-            '8A': 'A♭ Major', '8B': 'A♭ Minor',
-            '9A': 'A Major', '9B': 'A Minor',
-            '10A': 'B♭ Major', '10B': 'B♭ Minor',
-            '11A': 'B Major', '11B': 'B Minor',
-            '12A': 'C Major', '12B': 'C Minor',
-            '1A': 'C♯ Major', '1B': 'C♯ Minor',
-            '2A': 'D Major', '2B': 'D Minor',
-            '3A': 'E♭ Major', '3B': 'E♭ Minor',
-            '4A': 'E Major', '4B': 'E Minor',
-            '5A': 'F Major', '5B': 'F Minor',
-            '6A': 'F♯ Major', '6B': 'F♯ Minor',
-            '7A': 'G Major', '7B': 'G Minor'
+            '1A': 'A♭ Minor', '2A': 'E♭ Minor', '3A': 'B♭ Minor', '4A': 'F Minor',
+            '5A': 'C Minor', '6A': 'G Minor', '7A': 'D Minor', '8A': 'A Minor',
+            '9A': 'E Minor', '10A': 'B Minor', '11A': 'F♯ Minor', '12A': 'C♯ Minor',
+            '1B': 'B Major', '2B': 'F♯ Major', '3B': 'D♭ Major', '4B': 'A♭ Major',
+            '5B': 'E♭ Major', '6B': 'B♭ Major', '7B': 'F Major', '8B': 'C Major',
+            '9B': 'G Major', '10B': 'D Major', '11B': 'A Major', '12B': 'E Major'
         }
     
     def detect_key_essentia(self, y: np.ndarray, sr: int) -> Tuple[str, str, float]:

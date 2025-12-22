@@ -1,7 +1,9 @@
-librosa>=0.10.1
-numpy>=1.24.0
-scipy>=1.10.0
-soundfile>=0.12.1
-pydub>=0.25.1
-madmom>=0.16.1; platform_system != "Windows"
-numba>=0.57.0
+numpy==1.24.4
+scipy==1.10.1
+librosa==0.10.1
+soundfile==0.12.1
+pydub==0.25.1
+# Optional heavy extras (require C toolchain); analyzer works without them:
+# Cython>=0.29.36
+# madmom==0.16.1; platform_system != "Windows"
+# numba==0.57.1
