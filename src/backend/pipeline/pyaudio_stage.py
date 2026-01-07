@@ -126,7 +126,7 @@ class PyAudioStage:
     # 2) Librosa Fallback Implementation
     # ------------------------
 
-    def _fallback_segment(self, file_path: str) -> Dict[str, Any]:
+    def _fallback_segment(self, file_path: str, y=None, sr: Optional[int] = None) -> Dict[str, Any]:
         """
         RMS-based novelty segmentation fallback.
         Always succeeds (as long as librosa installed).
@@ -135,7 +135,8 @@ class PyAudioStage:
         import librosa
         import scipy.ndimage as ndi
 
-        y, sr = librosa.load(file_path, mono=True, sr=None)
+        if y is None or sr is None:
+            y, sr = librosa.load(file_path, mono=True, sr=None)
 
         hop = 512
         rms = librosa.feature.rms(y=y, hop_length=hop)[0]
@@ -172,7 +173,7 @@ class PyAudioStage:
     # Main API
     # ------------------------
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y=None, sr: Optional[int] = None) -> Dict[str, Any]:
         """
         Top-level pipeline API.
         Guaranteed safe output.
@@ -180,7 +181,7 @@ class PyAudioStage:
         result = self._pyaudio_segment(file_path)
 
         if result is None:
-            result = self._fallback_segment(file_path)
+            result = self._fallback_segment(file_path, y=y, sr=sr)
 
         # Add cues (up to 6)
         cues = []

@@ -24,7 +24,7 @@ class AubioStage:
         except Exception:
             return None
 
-    def _aubio_detect(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def _aubio_detect(self, file_path: str, y=None, sr: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Try aubio-based beat detection.
         Returns dict or None if aubio missing or errors.
@@ -33,8 +33,9 @@ class AubioStage:
             import aubio
             import librosa  # used for safe loading if aubio cannot decode well
 
-            # Load audio
-            y, sr = librosa.load(file_path, mono=True, sr=None)
+            # Load audio only if we weren't given it (avoid duplicate decode)
+            if y is None or sr is None:
+                y, sr = librosa.load(file_path, mono=True, sr=None)
 
             from aubio import tempo, source
 
@@ -149,12 +150,13 @@ class AubioStage:
 
         return min(candidates)
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y=None, sr: Optional[int] = None) -> Dict[str, Any]:
         """
         Stage output:
             {
               "first_strong_beat": float|None,
               "beats": [...],
+              "beatgrid": [...],  # alias of beats for downstream stages
               "onsets": [...],
               "confidence": float,
               "cues": []
@@ -164,14 +166,30 @@ class AubioStage:
         onsets = []
 
         # Try aubio first
-        aub = self._aubio_detect(file_path)
+        aub = self._aubio_detect(file_path, y=y, sr=sr)
         if aub is not None:
             beats = aub.get("beats", [])
             onsets = aub.get("onsets", [])
             confidence = 0.85
         else:
             # librosa fallback
-            fallback = self._librosa_fallback(file_path)
+            # If we already have audio, avoid re-decoding for fallback too.
+            if y is not None and sr is not None:
+                import librosa
+                hop = 512
+                onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+                onset_frames = librosa.onset.onset_detect(onset_env=onset_env, sr=sr, hop_length=hop)
+                onsets = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop)
+                onsets = [self._norm(o) for o in onsets if self._norm(o) is not None]
+
+                tempo, beat_frames = librosa.beat.beat_track(
+                    y=y, sr=sr, hop_length=hop, units="frames", trim=False
+                )
+                beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+                beats = [self._norm(b) for b in beat_times if self._norm(b) is not None]
+                fallback = {"beats": beats, "onsets": onsets}
+            else:
+                fallback = self._librosa_fallback(file_path)
             beats = fallback.get("beats", [])
             onsets = fallback.get("onsets", [])
             confidence = 0.60
@@ -182,6 +200,7 @@ class AubioStage:
         return {
             "first_strong_beat": fsb,
             "beats": beats,
+            "beatgrid": beats,
             "onsets": onsets,
             "confidence": confidence,
             "cues": []  # First beat is not yet a cue (pipeline decides)

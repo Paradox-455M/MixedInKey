@@ -45,7 +45,7 @@ class BridgeEnergyGapStage:
     # -------------------------
     # Core Logic
     # -------------------------
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y=None, sr=None, beat_times=None) -> Dict[str, Any]:
         import librosa
         import scipy.ndimage as ndi
 
@@ -53,15 +53,17 @@ class BridgeEnergyGapStage:
         cues: List[Dict[str, Any]] = []
 
         try:
-            y, sr = librosa.load(file_path, mono=True, sr=None)
             hop = 512
+            if y is None or sr is None:
+                y, sr = librosa.load(file_path, mono=True, sr=None)
             duration = librosa.get_duration(y=y, sr=sr)
 
             # Beat grid
-            _, beat_frames = librosa.beat.beat_track(
-                y=y, sr=sr, hop_length=hop, units="frames", trim=False
-            )
-            beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+            if beat_times is None:
+                _, beat_frames = librosa.beat.beat_track(
+                    y=y, sr=sr, hop_length=hop, units="frames", trim=False
+                )
+                beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
 
             # RMS energy
             rms = librosa.feature.rms(y=y, hop_length=hop)[0]

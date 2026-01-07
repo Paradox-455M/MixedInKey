@@ -112,6 +112,19 @@ class CuePipeline:
 
     def run(self, file_path: str) -> Dict[str, Any]:
         logs: List[str] = []
+        # Load audio once (downsampled) and reuse where stages support it.
+        # This avoids repeated `librosa.load` across multiple stages.
+        y = None
+        sr = None
+        duration_from_audio: Optional[float] = None
+        try:
+            import librosa
+            # Downsample for analysis speed; most detectors are robust at 22050 Hz.
+            y, sr = librosa.load(file_path, mono=True, sr=22050)
+            duration_from_audio = float(len(y) / sr) if sr else None
+        except Exception:
+            y, sr, duration_from_audio = None, None, None
+
         # 1) Execute stages defensively
         try:
             s_autocue = self.autocue.run(file_path)
@@ -119,12 +132,12 @@ class CuePipeline:
             logs.append("autocue_stage failed: " + traceback.format_exc(limit=1))
             s_autocue = {"cues": []}
         try:
-            s_aubio = self.aubio.run(file_path)
+            s_aubio = self.aubio.run(file_path, y=y, sr=sr)
         except Exception:
             logs.append("aubio_stage failed: " + traceback.format_exc(limit=1))
             s_aubio = {"beatgrid": [], "cues": []}
         try:
-            s_pyaudio = self.pyaudio.run(file_path)
+            s_pyaudio = self.pyaudio.run(file_path, y=y, sr=sr)
         except Exception:
             logs.append("pyaudio_stage failed: " + traceback.format_exc(limit=1))
             s_pyaudio = {"cues": []}
@@ -133,27 +146,29 @@ class CuePipeline:
         except Exception:
             logs.append("analyzer_stage failed: " + traceback.format_exc(limit=1))
             s_analyzer = {"cues": [], "bpm": None}
+
+        # Prefer the fastest available beat grid for downstream snapping.
+        beatgrid: List[float] = (
+            s_aubio.get("beatgrid", [])  # preferred
+            or s_aubio.get("beats", [])  # compatibility
+            or []
+        )
         try:
-            s_ch = self.chorus_hook.run(file_path)
+            s_ch = self.chorus_hook.run(file_path, y=y, sr=sr, beat_times=beatgrid)
         except Exception:
             logs.append("chorus_hook_stage failed: " + traceback.format_exc(limit=1))
             s_ch = {"cues": []}
         try:
-            s_bridge = self.bridge.run(file_path)
+            s_bridge = self.bridge.run(file_path, y=y, sr=sr, beat_times=beatgrid)
         except Exception:
             logs.append("bridge_energy_gap failed: " + traceback.format_exc(limit=1))
             s_bridge = {"cues": []}
 
-        beatgrid: List[float] = s_aubio.get("beatgrid", []) or []
-
         # 2) Determine duration (best-effort)
-        duration: Optional[float] = None
-        try:
-            import librosa  # optional
-            y, sr = librosa.load(file_path, mono=True, sr=None)
-            duration = float(len(y) / sr)
-        except Exception:
-            duration = None
+        duration: Optional[float] = (
+            s_analyzer.get("duration")
+            or duration_from_audio
+        )
 
         # 3) Build standardized cue list with stage tags
         stage_cue_sets = [

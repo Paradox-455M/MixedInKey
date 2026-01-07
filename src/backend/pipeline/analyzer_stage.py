@@ -1,39 +1,59 @@
 from __future__ import annotations
 
-from typing import Dict, Any, List, Optional, Callable
-
-
-# Try to import the user's main analyzer class.
-# The expected name is MixedInAIAnalyzer, but we fall back to AudioAnalyzer if needed.
-try:
-    # Preferred name per instructions
-    from analyzer import MixedInAIAnalyzer  # type: ignore
-except Exception:
-    try:
-        from analyzer import AudioAnalyzer as MixedInAIAnalyzer  # type: ignore
-    except Exception:
-        MixedInAIAnalyzer = None  # type: ignore
+from typing import Dict, Any, List, Optional
 
 
 class AnalyzerStage:
     """
-    Wrapper around the user's main analyzer (analyzer.py).
-    Returns a normalized dict consumed by the pipeline orchestrator.
+    Wrapper around the project's analyzer (`src/backend/analyzer.py`).
+
+    Key performance property: the underlying analyzer instance is created once
+    and reused across calls (avoids repeated heavy imports/initialization).
     """
 
     def __init__(self) -> None:
-        self.analyzer = None
-        if MixedInAIAnalyzer is not None:
+        self.analyzer = self._instantiate_analyzer()
+
+    @staticmethod
+    def _instantiate_analyzer():
+        """
+        Best-effort import that works whether code runs as:
+        - `src.backend.pipeline.*`
+        - `backend.pipeline.*`
+        - executed from repo root with `src/` on PYTHONPATH
+        """
+        candidates = []
+        try:
+            from ..analyzer import AudioAnalyzer as _Analyzer  # type: ignore
+            candidates.append(_Analyzer)
+        except Exception:
+            pass
+        try:
+            from src.backend.analyzer import AudioAnalyzer as _Analyzer  # type: ignore
+            candidates.append(_Analyzer)
+        except Exception:
+            pass
+        try:
+            from analyzer import AudioAnalyzer as _Analyzer  # type: ignore
+            candidates.append(_Analyzer)
+        except Exception:
+            pass
+
+        last_err: Optional[Exception] = None
+        for cls in candidates:
             try:
-                self.analyzer = MixedInAIAnalyzer()
-            except Exception:
-                # Defer to run() error handling
-                self.analyzer = None
+                return cls()
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError("Could not import AudioAnalyzer")
 
     def _call_analyze(self, file_path: str) -> Dict[str, Any]:
         """
         Call the analyzer using the best available entrypoint.
-        Supports .analyze() or .analyze_audio().
+        Supports `.analyze()` or `.analyze_audio()`.
         """
         if self.analyzer is None:
             raise RuntimeError("Analyzer class could not be instantiated")
@@ -113,49 +133,5 @@ class AnalyzerStage:
                 "energy_profile": [],
                 "error": str(e),
             }
-
-from typing import Dict, Any, List
-
-
-class AnalyzerStage:
-    """
-    Wraps existing AudioAnalyzer and exposes:
-    { key, bpm, energy, harmonic_cues, drops, cues }
-    """
-
-    def run(self, file_path: str) -> Dict[str, Any]:
-        try:
-            from ..analyzer import AudioAnalyzer  # relative import from backend
-        except Exception:
-            from src.backend.analyzer import AudioAnalyzer  # fallback
-        key = None
-        bpm = None
-        energy = None
-        drops: List[float] = []
-        harmonic_cues: List[Dict[str, Any]] = []
-        cues: List[Dict[str, Any]] = []
-        try:
-            analyzer = AudioAnalyzer()
-            result = analyzer.analyze_audio(file_path)
-            if result:
-                key = result.get("key")
-                bpm = result.get("bpm")
-                energy = result.get("energy_analysis", {}).get("overall_energy")
-                cues = result.get("cue_points", []) or []
-                for c in cues:
-                    if c.get("type") == "drop":
-                        drops.append(float(c.get("time", 0.0)))
-                    if c.get("type") in ("chorus", "hook"):
-                        harmonic_cues.append(c)
-        except Exception:
-            pass
-        return {
-            "key": key,
-            "bpm": bpm,
-            "energy": energy,
-            "harmonic_cues": harmonic_cues,
-            "drops": drops,
-            "cues": cues,
-        }
 
 
