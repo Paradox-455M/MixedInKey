@@ -96,8 +96,17 @@ class AnalyzerStage:
                 or []
             )
 
+            key = result.get("key")
+            energy = (result.get("energy_analysis", {}) or {}).get("overall_energy")
+            harmonic_cues = [c for c in cues_out if c.get("type") in ("chorus", "hook")]
+            drops = [float(c.get("time", 0.0)) for c in cues_out if c.get("type") == "drop"]
+
             return {
+                "key": key,
                 "bpm": result.get("bpm"),
+                "energy": energy,
+                "harmonic_cues": harmonic_cues,
+                "drops": drops,
                 "duration": result.get("duration"),
                 "cues": cues_out,
                 "segments": segments,
@@ -106,56 +115,16 @@ class AnalyzerStage:
 
         except Exception as e:
             return {
+                "key": None,
                 "bpm": None,
+                "energy": None,
+                "harmonic_cues": [],
+                "drops": [],
                 "duration": None,
                 "cues": [],
                 "segments": [],
                 "energy_profile": [],
                 "error": str(e),
             }
-
-from typing import Dict, Any, List
-
-
-class AnalyzerStage:
-    """
-    Wraps existing AudioAnalyzer and exposes:
-    { key, bpm, energy, harmonic_cues, drops, cues }
-    """
-
-    def run(self, file_path: str) -> Dict[str, Any]:
-        try:
-            from ..analyzer import AudioAnalyzer  # relative import from backend
-        except Exception:
-            from src.backend.analyzer import AudioAnalyzer  # fallback
-        key = None
-        bpm = None
-        energy = None
-        drops: List[float] = []
-        harmonic_cues: List[Dict[str, Any]] = []
-        cues: List[Dict[str, Any]] = []
-        try:
-            analyzer = AudioAnalyzer()
-            result = analyzer.analyze_audio(file_path)
-            if result:
-                key = result.get("key")
-                bpm = result.get("bpm")
-                energy = result.get("energy_analysis", {}).get("overall_energy")
-                cues = result.get("cue_points", []) or []
-                for c in cues:
-                    if c.get("type") == "drop":
-                        drops.append(float(c.get("time", 0.0)))
-                    if c.get("type") in ("chorus", "hook"):
-                        harmonic_cues.append(c)
-        except Exception:
-            pass
-        return {
-            "key": key,
-            "bpm": bpm,
-            "energy": energy,
-            "harmonic_cues": harmonic_cues,
-            "drops": drops,
-            "cues": cues,
-        }
 
 
