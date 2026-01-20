@@ -357,6 +357,25 @@ const App = () => {
     return '#c084fc'; // Very high - light pink
   };
 
+  const formatScore = (score) => {
+    if (score === null || score === undefined) return 'N/A';
+    return Math.round(score);
+  };
+
+  const getScoreColor = (status) => {
+    if (status === 'good') return '#10b981';
+    if (status === 'ok') return '#f59e0b';
+    if (status === 'poor') return '#ef4444';
+    return '#94a3b8';
+  };
+
+  const getScoreStatus = (score) => {
+    if (score === null || score === undefined) return 'unknown';
+    if (score >= 85) return 'good';
+    if (score >= 70) return 'ok';
+    return 'poor';
+  };
+
   // Generate energy profile data
   const getEnergyProfile = () => {
     if (!analysis || !analysis.cue_points) return [];
@@ -529,6 +548,81 @@ const App = () => {
                       <div className="summary-col">{analysis.key}</div>
                     </div>
                   </div>
+
+                  {/* Mix Quality Scorecard */}
+                  {analysis.mix_scorecard && !analysis.mix_scorecard.error ? (
+                    <div className="mix-scorecard-section">
+                      <h3 className="section-title">Mix Quality Scorecard</h3>
+                      <div className="scorecard-overview">
+                        <div className="scorecard-main">
+                          <div
+                            className="scorecard-score"
+                            style={{ borderColor: getScoreColor(getScoreStatus(analysis.mix_scorecard.overall_score)) }}
+                          >
+                            <div className="scorecard-score-value">
+                              {formatScore(analysis.mix_scorecard.overall_score)}
+                            </div>
+                            <div className="scorecard-score-label">Overall Score</div>
+                          </div>
+                          <div className="scorecard-grade">
+                            <div className="scorecard-grade-label">Grade</div>
+                            <div className="scorecard-grade-value">{analysis.mix_scorecard.grade}</div>
+                          </div>
+                        </div>
+
+                        <div className="scorecard-categories">
+                          {analysis.mix_scorecard.categories && analysis.mix_scorecard.categories.map((cat) => (
+                            <div key={cat.id} className="scorecard-category-card">
+                              <div className="scorecard-category-header">
+                                <div className="scorecard-category-title">{cat.label}</div>
+                                <div
+                                  className="scorecard-category-score"
+                                  style={{ color: getScoreColor(cat.status) }}
+                                >
+                                  {formatScore(cat.score)}
+                                </div>
+                              </div>
+                              <div className="scorecard-category-status" style={{ color: getScoreColor(cat.status) }}>
+                                {cat.status}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {analysis.mix_scorecard.issues && analysis.mix_scorecard.issues.length > 0 && (
+                        <div className="scorecard-issues">
+                          <h4 className="subsection-title">Top Issues</h4>
+                          <div className="scorecard-issues-grid">
+                            {analysis.mix_scorecard.issues.slice(0, 3).map((issue, index) => (
+                              <div key={`issue-${index}`} className="scorecard-issue-card">
+                                <div className="scorecard-issue-title">{issue.message}</div>
+                                <div className="scorecard-issue-summary">{issue.summary}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {analysis.mix_scorecard.suggestions && analysis.mix_scorecard.suggestions.length > 0 && (
+                        <div className="scorecard-suggestions">
+                          <h4 className="subsection-title">Suggestions</h4>
+                          <div className="scorecard-suggestions-grid">
+                            {analysis.mix_scorecard.suggestions.slice(0, 3).map((suggestion, index) => (
+                              <div key={`suggestion-${index}`} className="scorecard-suggestion-card">
+                                {suggestion.message}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : analysis.mix_scorecard?.error ? (
+                    <div className="error">
+                      <AlertCircle size={16} />
+                      Mix scorecard unavailable: {analysis.mix_scorecard.error}
+                    </div>
+                  ) : null}
 
                   {/* Basic Info Cards */}
                   {/* <div className="info-cards">

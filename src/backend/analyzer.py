@@ -38,6 +38,7 @@ THREAD_INFO = _configure_threads()
 
 import sys
 import json
+import math
 import numpy as np
 import librosa
 import soundfile as sf
@@ -2158,6 +2159,7 @@ class AudioAnalyzer:
 
             # Generate waveform data for visualization
             waveform_data = self._generate_waveform_data(y, sr)
+            audio_stats = self._calculate_audio_stats(y)
 
             # Basic audio analysis
             camelot_key, mode, key_conf = self.detect_key_rekordbox_algorithm(y, sr)
@@ -2207,6 +2209,7 @@ class AudioAnalyzer:
                 'duration': duration,
                 'sample_rate': sr,
                 'waveform_data': waveform_data,
+                'audio_stats': audio_stats,
                 'key': camelot_key,
                 'key_mode': mode,
                 'key_confidence': float(key_conf),
@@ -2272,6 +2275,16 @@ class AudioAnalyzer:
             analysis["beatgrid"] = pipeline_result.get("beatgrid", [])
             analysis["pipeline"] = pipeline_result
             analysis["hotcues"] = pipeline_result.get("hotcues", [])
+
+            # Mix quality scorecard
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(__file__), 'tools'))
+                from mix_scorecard import build_mix_scorecard
+                analysis["mix_scorecard"] = build_mix_scorecard(analysis)
+            except Exception as e:
+                analysis["mix_scorecard"] = {"error": str(e)}
 
             return analysis
 
@@ -2397,6 +2410,35 @@ class AudioAnalyzer:
             
         except Exception as e:
             return []
+
+    def _calculate_audio_stats(self, y: np.ndarray) -> Dict[str, float]:
+        """Compute simple peak/RMS stats for headroom checks."""
+        try:
+            if y.size == 0:
+                return {"peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None, "crest_db": None}
+            peak = float(np.max(np.abs(y)))
+            rms = float(np.sqrt(np.mean(np.square(y))))
+
+            def to_dbfs(val: float) -> Optional[float]:
+                if val <= 0:
+                    return None
+                return float(20.0 * math.log10(val))
+
+            peak_dbfs = to_dbfs(peak)
+            rms_dbfs = to_dbfs(rms)
+            crest_db = None
+            if peak_dbfs is not None and rms_dbfs is not None:
+                crest_db = peak_dbfs - rms_dbfs
+
+            return {
+                "peak": peak,
+                "rms": rms,
+                "peak_dbfs": None if peak_dbfs is None else round(peak_dbfs, 2),
+                "rms_dbfs": None if rms_dbfs is None else round(rms_dbfs, 2),
+                "crest_db": None if crest_db is None else round(crest_db, 2),
+            }
+        except Exception:
+            return {"peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None, "crest_db": None}
 
     def _analyze_energy_levels(self, y, sr):
         """Analyze energy levels using the energy analysis module."""
