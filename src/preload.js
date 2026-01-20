@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log('[PRELOAD] exportAnalysis called');
     return ipcRenderer.invoke('export-analysis', data);
   },
+
+  exportRekordboxXml: (data) => {
+    console.log('[PRELOAD] exportRekordboxXml called');
+    return ipcRenderer.invoke('export-rekordbox-xml', data);
+  },
   
   // Platform info
   platform: process.platform,

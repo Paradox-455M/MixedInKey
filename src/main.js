@@ -5,6 +5,54 @@ const fs = require('fs');
 
 let mainWindow;
 
+function escapeXml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function filePathToUrl(filePath) {
+  const normalized = path.resolve(filePath).replace(/\\/g, '/');
+  return `file://localhost/${encodeURI(normalized)}`;
+}
+
+function buildRekordboxXml({ tracks, playlistName }) {
+  const entries = tracks.length;
+  const safeName = playlistName || 'Mixed In AI Set';
+  const lines = [];
+  lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+  lines.push('<DJ_PLAYLISTS Version="1.0.0">');
+  lines.push('  <PRODUCT Name="rekordbox" Version="7.0.4" Company="AlphaTheta"/>');
+  lines.push(`  <COLLECTION Entries="${entries}">`);
+  tracks.forEach((track, idx) => {
+    const trackId = idx + 1;
+    const location = filePathToUrl(track.path);
+    lines.push(
+      `    <TRACK TrackID="${trackId}" Name="${escapeXml(track.name)}" ` +
+      `Artist="${escapeXml(track.artist || 'Unknown Artist')}" ` +
+      `Album="${escapeXml(track.album || 'Unknown Album')}" ` +
+      `Location="${escapeXml(location)}" />`
+    );
+  });
+  lines.push('  </COLLECTION>');
+  lines.push('  <PLAYLISTS>');
+  lines.push('    <NODE Type="0" Name="ROOT" Count="1">');
+  lines.push(
+    `      <NODE Name="${escapeXml(safeName)}" Type="1" KeyType="0" Entries="${entries}">`
+  );
+  tracks.forEach((track, idx) => {
+    lines.push(`        <TRACK Key="${idx + 1}" />`);
+  });
+  lines.push('      </NODE>');
+  lines.push('    </NODE>');
+  lines.push('  </PLAYLISTS>');
+  lines.push('</DJ_PLAYLISTS>');
+  return lines.join('\n');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -276,6 +324,32 @@ ipcMain.handle('export-analysis', async (event, { filePath, analysis, format }) 
     return null;
   } catch (error) {
     throw new Error(`Export failed: ${error.message}`);
+  }
+});
+
+// Export Rekordbox XML playlist
+ipcMain.handle('export-rekordbox-xml', async (event, { playlistName, tracks }) => {
+  try {
+    if (!Array.isArray(tracks) || tracks.length === 0) {
+      throw new Error('No tracks provided for Rekordbox export.');
+    }
+
+    const exportPath = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: (playlistName || 'mixedinai_set') + '.xml',
+      filters: [
+        { name: 'XML Files', extensions: ['xml'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (!exportPath.canceled) {
+      const xml = buildRekordboxXml({ tracks, playlistName });
+      fs.writeFileSync(exportPath.filePath, xml, 'utf8');
+      return exportPath.filePath;
+    }
+    return null;
+  } catch (error) {
+    throw new Error(`Rekordbox export failed: ${error.message}`);
   }
 });
 

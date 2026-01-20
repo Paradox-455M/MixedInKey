@@ -394,6 +394,124 @@ body {
   line-height: 1.4;
 }
 
+/* Set Planner */
+.set-plan-section {
+  margin-bottom: 2rem;
+}
+
+.set-plan-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.export-button {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.set-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.set-plan-track-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.set-plan-track-index {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.12);
+  border-radius: 10px;
+  padding: 0.4rem 0.75rem;
+}
+
+.set-plan-track-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin-bottom: 0.35rem;
+}
+
+.set-plan-track-meta {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+}
+
+.set-plan-track-mix {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: right;
+  line-height: 1.4;
+}
+
+.set-plan-transitions {
+  margin-top: 1.5rem;
+}
+
+.set-plan-transition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.set-plan-transition-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.set-plan-transition-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin-bottom: 0.35rem;
+}
+
+.set-plan-transition-score {
+  font-size: 0.75rem;
+  color: #a855f7;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.set-plan-transition-meta {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.set-plan-transition-reasons {
+  list-style: disc;
+  padding-left: 1rem;
+  font-size: 0.75rem;
+  color: #d1d5db;
+}
+
 /* Interactive Waveform */
 .waveform-section {
   margin-bottom: 2rem;
