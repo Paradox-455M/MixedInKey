@@ -1,0 +1,202 @@
+.transition-visualizer {
+    background: #18181b;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+    border: 1px solid #27272a;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.track-timeline-container {
+    margin-bottom: 8px;
+}
+
+.track-info {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.track-role {
+    background: #27272a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 8px;
+    font-weight: 600;
+    color: #a1a1aa;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.track-title {
+    color: #e4e4e7;
+    font-weight: 500;
+    margin-right: 8px;
+}
+
+.track-time {
+    color: #71717a;
+    font-family: monospace;
+}
+
+.timeline-viewport {
+    position: relative;
+    height: 80px;
+    background: #0f0f11;
+    overflow: hidden;
+    border-radius: 6px;
+    border: 1px solid #27272a;
+}
+
+.timeline-content {
+    position: absolute;
+    height: 100%;
+    left: 0;
+    will-change: transform;
+    display: flex;
+    align-items: center;
+}
+
+.waveform-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 1;
+}
+
+.cues-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 5;
+    pointer-events: none; /* Let clicks pass through to waveform if needed */
+}
+
+/* Fallback timeline bar when no waveform */
+.timeline-bar {
+    position: relative;
+    height: 100%;
+    background: #27272a;
+    background-image: repeating-linear-gradient(90deg, 
+        transparent, 
+        transparent 149px, 
+        #3f3f46 149px, 
+        #3f3f46 150px
+    ); 
+    border-radius: 4px;
+}
+
+.cue-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.cue-line {
+    width: 2px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+}
+
+.cue-label {
+    position: absolute;
+    top: 4px;
+    font-size: 10px;
+    white-space: nowrap;
+    color: #d4d4d8;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 1px 4px;
+    border-radius: 2px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 20;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Cue Colors */
+.cue-marker.type-drop .cue-line { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.cue-marker.type-drop .cue-label { color: #fca5a5; }
+
+.cue-marker.type-breakdown .cue-line { background: #3b82f6; box-shadow: 0 0 6px rgba(59, 130, 246, 0.4); }
+.cue-marker.type-breakdown .cue-label { color: #93c5fd; }
+
+.cue-marker.type-intro .cue-line { background: #10b981; }
+.cue-marker.type-intro .cue-label { color: #6ee7b7; }
+
+.cue-marker.type-outro .cue-line { background: #f59e0b; }
+.cue-marker.type-outro .cue-label { color: #fcd34d; }
+
+.cue-marker.type-chorus .cue-line { background: #8b5cf6; }
+.cue-marker.type-chorus .cue-label { color: #c4b5fd; }
+
+.mix-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 0;
+}
+
+.mix-line {
+    width: 2px;
+    height: 100%;
+    background: #fff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.mix-label {
+    position: absolute;
+    bottom: 4px;
+    font-size: 10px;
+    color: #fff;
+    font-weight: 600;
+    background: #27272a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #3f3f46;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 20;
+}
+
+.center-line {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 215, 0, 0.3); /* Gold center line */
+    pointer-events: none;
+    z-index: 30;
+    border-left: 1px dashed rgba(255, 215, 0, 0.6);
+}
+
+.visualizer-gap {
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.transition-info {
+    font-size: 11px;
+    color: #a1a1aa;
+    background: #18181b;
+    padding: 4px 12px;
+    border-radius: 12px;
+    border: 1px solid #27272a;
+    font-weight: 500;
+}

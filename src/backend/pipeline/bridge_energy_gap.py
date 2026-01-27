@@ -45,7 +45,7 @@ class BridgeEnergyGapStage:
     # -------------------------
     # Core Logic
     # -------------------------
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y: Any = None, sr: int = None, features: Dict[str, Any] = None) -> Dict[str, Any]:
         import librosa
         import scipy.ndimage as ndi
 
@@ -53,18 +53,27 @@ class BridgeEnergyGapStage:
         cues: List[Dict[str, Any]] = []
 
         try:
-            y, sr = librosa.load(file_path, mono=True, sr=None)
+            if y is None or sr is None:
+                y, sr = librosa.load(file_path, mono=True, sr=None)
+            
             hop = 512
             duration = librosa.get_duration(y=y, sr=sr)
 
-            # Beat grid
-            _, beat_frames = librosa.beat.beat_track(
-                y=y, sr=sr, hop_length=hop, units="frames", trim=False
-            )
-            beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+            # Use cached beat times from features if available (avoids duplicate beat tracking)
+            if features and features.get('beat_times') is not None:
+                beat_times = features['beat_times']
+            else:
+                # Fallback: compute beat grid
+                _, beat_frames = librosa.beat.beat_track(
+                    y=y, sr=sr, hop_length=hop, units="frames", trim=False
+                )
+                beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
 
-            # RMS energy
-            rms = librosa.feature.rms(y=y, hop_length=hop)[0]
+            # Use cached RMS from features if available
+            if features and features.get('rms_512') is not None:
+                rms = features['rms_512']
+            else:
+                rms = librosa.feature.rms(y=y, hop_length=hop)[0]
             rms_smooth = ndi.gaussian_filter1d(rms, sigma=4)
             rms_n = self._norm(rms_smooth)
 
@@ -73,8 +82,11 @@ class BridgeEnergyGapStage:
             flat_smooth = ndi.gaussian_filter1d(flat, sigma=5)
             flat_n = self._norm(1.0 - flat_smooth)  # low flatness = empty section
 
-            # Harmonic flux (small = calm/bridge)
-            y_harm, _ = librosa.effects.hpss(y)
+            # Use cached HPSS for harmonic flux analysis (avoids expensive recomputation)
+            if features and features.get('y_harm') is not None:
+                y_harm = features['y_harm']
+            else:
+                y_harm, _ = librosa.effects.hpss(y)
             cent = librosa.feature.spectral_centroid(y=y_harm, sr=sr, hop_length=hop)[0]
             cent_diff = np.abs(np.diff(ndi.gaussian_filter1d(cent, sigma=3)))
             cent_n = self._norm(np.pad(cent_diff, (0, 1)))

@@ -24,7 +24,7 @@ class AubioStage:
         except Exception:
             return None
 
-    def _aubio_detect(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def _aubio_detect(self, file_path: str, y_cache: Any = None, sr_cache: int = None) -> Optional[Dict[str, Any]]:
         """
         Try aubio-based beat detection.
         Returns dict or None if aubio missing or errors.
@@ -33,29 +33,53 @@ class AubioStage:
             import aubio
             import librosa  # used for safe loading if aubio cannot decode well
 
-            # Load audio
-            y, sr = librosa.load(file_path, mono=True, sr=None)
+            # Load audio or use cache
+            if y_cache is not None and sr_cache is not None:
+                y = y_cache
+                sr = sr_cache
+            else:
+                # Load audio at 22050Hz (speed optimization)
+                target_sr = 22050
+                try:
+                    y, sr = librosa.load(file_path, mono=True, sr=target_sr)
+                except Exception:
+                     y, sr = librosa.load(file_path, mono=True, sr=None)
 
             from aubio import tempo, source
 
-            win_s = 1024
-            hop_s = 512
+            # Use sr for window/hop
+            # For 22k: win=512, hop=256
+            # For 44k: win=1024, hop=512
+            if sr < 32000:
+                win_s = 512
+                hop_s = 256
+            else:
+                win_s = 1024
+                hop_s = 512
 
-            src = source(file_path, samplerate=sr, hop_size=hop_s)
-            o = tempo("default", win_s, hop_s, sr)
-
+            # Use aubio.source (file streaming) for beats
+            # Note: We can't easily perform beat tracking on 'y' without complex block loop
+            # So we stick to file streaming for beats, but use 'y' for onsets below.
+            # We try to enforce the SAME sr on source stream
+            
             beats_sec = []
-            total_frames = 0
-
-            while True:
-                samples, nread = src()
-                if o(samples):  # True if beat detected
-                    beat_time = o.get_last_s()
-                    beats_sec.append(float(beat_time))
-
-                total_frames += nread
-                if nread < hop_s:
-                    break
+            try:
+                src = source(file_path, samplerate=sr, hop_size=hop_s)
+                o = tempo("default", win_s, hop_s, src.samplerate)
+                
+                total_frames = 0
+                while True:
+                    samples, nread = src()
+                    if o(samples):
+                        beat_time = o.get_last_s()
+                        beats_sec.append(float(beat_time))
+                    total_frames += nread
+                    if nread < hop_s:
+                        break
+            except Exception:
+                 # If aubio stream fails, maybe fallback to librosa beat track?
+                 # But we have _librosa_fallback method below, so just fail here
+                 pass # beats_sec stays empty
 
             # Detect onset clusters for "strongest" beat
             onset_clusters = self._aubio_onset_clusters(y, sr)
@@ -103,9 +127,10 @@ class AubioStage:
         """
         import librosa
 
-        y, sr = librosa.load(file_path, mono=True, sr=None)
+        # Load at 22050Hz
+        y, sr = librosa.load(file_path, mono=True, sr=22050)
 
-        hop = 512
+        hop = 256 # adjusted for 22050Hz
 
         # Onset detection
         onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
@@ -149,7 +174,7 @@ class AubioStage:
 
         return min(candidates)
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y: Any = None, sr: int = None, features: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Stage output:
             {
@@ -163,18 +188,27 @@ class AubioStage:
         beats = []
         onsets = []
 
-        # Try aubio first
-        aub = self._aubio_detect(file_path)
-        if aub is not None:
-            beats = aub.get("beats", [])
-            onsets = aub.get("onsets", [])
+        # Try to use cached beat times from features first
+        if features and features.get('beat_times') is not None:
+            beats = list(features['beat_times'])
+            # Still need onsets from aubio for first-beat detection
+            aub = self._aubio_detect(file_path, y_cache=y, sr_cache=sr)
+            if aub is not None:
+                onsets = aub.get("onsets", [])
             confidence = 0.85
         else:
-            # librosa fallback
-            fallback = self._librosa_fallback(file_path)
-            beats = fallback.get("beats", [])
-            onsets = fallback.get("onsets", [])
-            confidence = 0.60
+            # Try aubio detection
+            aub = self._aubio_detect(file_path, y_cache=y, sr_cache=sr)
+            if aub is not None:
+                beats = aub.get("beats", [])
+                onsets = aub.get("onsets", [])
+                confidence = 0.85
+            else:
+                # librosa fallback
+                fallback = self._librosa_fallback(file_path)
+                beats = fallback.get("beats", [])
+                onsets = fallback.get("onsets", [])
+                confidence = 0.60
 
         # Compute strongest starting beat
         fsb = self._first_strong_beat(beats, onsets)

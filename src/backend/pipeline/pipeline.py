@@ -25,6 +25,26 @@ def _merge_cues(*lists: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return merged
 
 
+def _nearest_bar(t: float, beatgrid: List[float], bpm: float) -> float:
+    """Snap time to the nearest downbeat (1st beat of a 4-bar phrase approximation)."""
+    if not beatgrid or bpm <= 0:
+        return float(t)
+    
+    # Simple heuristic: Assume first beat is a downbeat (common in EDM)
+    # Then every 4th beat is a bar start.
+    # Find nearest beat index
+    idx = min(range(len(beatgrid)), key=lambda i: abs(beatgrid[i] - t))
+    
+    # Snap to nearest 4-beat boundary (0, 4, 8, ...)
+    # If the track is perfectly quantized, this works.
+    # TODO: More advanced downbeat detection would need spectral analysis.
+    bar_idx = round(idx / 4) * 4
+    
+    # Clamp to valid range
+    bar_idx = max(0, min(bar_idx, len(beatgrid) - 1))
+    return float(beatgrid[bar_idx])
+
+
 def _dedup_and_space(cues: List[Dict[str, Any]], min_spacing: float = 6.0) -> List[Dict[str, Any]]:
     cues = sorted(cues, key=lambda c: c.get("time", 0.0))
     pruned: List[Dict[str, Any]] = []
@@ -110,50 +130,123 @@ class CuePipeline:
         self.chorus_hook = ChorusHookStage()
         self.bridge = BridgeEnergyGapStage()
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y: Any = None, sr: int = None, features: Dict[str, Any] = None) -> Dict[str, Any]:
         logs: List[str] = []
-        # 1) Execute stages defensively
-        try:
-            s_autocue = self.autocue.run(file_path)
-        except Exception:
-            logs.append("autocue_stage failed: " + traceback.format_exc(limit=1))
-            s_autocue = {"cues": []}
-        try:
-            s_aubio = self.aubio.run(file_path)
-        except Exception:
-            logs.append("aubio_stage failed: " + traceback.format_exc(limit=1))
-            s_aubio = {"beatgrid": [], "cues": []}
-        try:
-            s_pyaudio = self.pyaudio.run(file_path)
-        except Exception:
-            logs.append("pyaudio_stage failed: " + traceback.format_exc(limit=1))
-            s_pyaudio = {"cues": []}
-        try:
-            s_analyzer = self.analyzer.run(file_path)
-        except Exception:
-            logs.append("analyzer_stage failed: " + traceback.format_exc(limit=1))
-            s_analyzer = {"cues": [], "bpm": None}
-        try:
-            s_ch = self.chorus_hook.run(file_path)
-        except Exception:
-            logs.append("chorus_hook_stage failed: " + traceback.format_exc(limit=1))
-            s_ch = {"cues": []}
-        try:
-            s_bridge = self.bridge.run(file_path)
-        except Exception:
-            logs.append("bridge_energy_gap failed: " + traceback.format_exc(limit=1))
-            s_bridge = {"cues": []}
+        # 1) Execute stages in parallel using ThreadPoolExecutor
+        import concurrent.futures
+        
+        # Initialize default results
+        s_autocue = {"cues": []}
+        s_aubio = {"beatgrid": [], "cues": []}
+        s_pyaudio = {"cues": []}
+        s_analyzer = {"cues": [], "bpm": None}
+        s_ch = {"cues": []}
+        s_bridge = {"cues": []}
+        
+        # Ensure features dict exists
+        if features is None:
+            features = {}
+
+        # Define wrapper functions to capture exceptions without crashing the thread pool
+        def run_safely(stage_name, stage_obj, fpath, **kwargs):
+            try:
+                # pass kwargs if the stage accepts them
+                if hasattr(stage_obj, 'run') and stage_obj.run.__code__.co_argcount > 2:
+                     return stage_obj.run(fpath, **kwargs)
+                return stage_obj.run(fpath)
+            except Exception:
+                return f"{stage_name}_failed: " + traceback.format_exc(limit=1)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            # Pass y/sr AND features to all stages that can use them
+            # This eliminates duplicate HPSS, beat tracking, and spectral feature computation
+            
+            future_autocue = executor.submit(run_safely, "autocue_stage", self.autocue, file_path)
+            future_aubio = executor.submit(run_safely, "aubio_stage", self.aubio, file_path, y=y, sr=sr, features=features)
+            future_pyaudio = executor.submit(run_safely, "pyaudio_stage", self.pyaudio, file_path, y=y, sr=sr, features=features)
+            future_analyzer = executor.submit(run_safely, "analyzer_stage", self.analyzer, file_path) # analyzer handles itself
+            future_ch = executor.submit(run_safely, "chorus_hook_stage", self.chorus_hook, file_path, y=y, sr=sr, features=features)
+            future_bridge = executor.submit(run_safely, "bridge_energy_gap", self.bridge, file_path, y=y, sr=sr, features=features)
+
+            # Collect results
+            res_autocue = future_autocue.result()
+            if isinstance(res_autocue, str):
+                logs.append(res_autocue)
+            else:
+                s_autocue = res_autocue
+
+            res_aubio = future_aubio.result()
+            if isinstance(res_aubio, str):
+                logs.append(res_aubio)
+            else:
+                s_aubio = res_aubio
+
+            res_pyaudio = future_pyaudio.result()
+            if isinstance(res_pyaudio, str):
+                logs.append(res_pyaudio)
+            else:
+                s_pyaudio = res_pyaudio
+
+            res_analyzer = future_analyzer.result()
+            if isinstance(res_analyzer, str):
+                logs.append(res_analyzer)
+            else:
+                s_analyzer = res_analyzer
+
+            res_ch = future_ch.result()
+            if isinstance(res_ch, str):
+                logs.append(res_ch)
+            else:
+                s_ch = res_ch
+
+            res_bridge = future_bridge.result()
+            if isinstance(res_bridge, str):
+                logs.append(res_bridge)
+            else:
+                s_bridge = res_bridge
 
         beatgrid: List[float] = s_aubio.get("beatgrid", []) or []
 
-        # 2) Determine duration (best-effort)
+        # Fallback: If aubio failed to produce a beatgrid, generate one from analyzer BPM
+        if not beatgrid:
+            bpm = s_analyzer.get("bpm")
+            if bpm and bpm > 0:
+                 # Generate a simple grid starting at 0.0 (or first cue time)
+                 beat_interval = 60.0 / float(bpm)
+                 # Estimate start time from first cue or onset if available
+                 start_t = 0.0
+                 # Try to find a sync point from onsets
+                 onsets = s_aubio.get("onsets", [])
+                 if onsets:
+                     start_t = onsets[0]
+                 
+                 # Generate grid for 10 minutes (safe upper bound) or duration
+                 limit = 600.0
+                 try:
+                     import soundfile as sf
+                     info = sf.info(file_path)
+                     limit = float(info.duration)
+                 except Exception:
+                     pass
+                     
+                 curr = start_t
+                 while curr < limit:
+                     beatgrid.append(curr)
+                     curr += beat_interval
+                 logs.append(f"generated fallback beatgrid from BPM {bpm} starting at {start_t:.2f}s")
+
+        # 2) Determine duration (fast)
         duration: Optional[float] = None
         try:
-            import librosa  # optional
-            y, sr = librosa.load(file_path, mono=True, sr=None)
-            duration = float(len(y) / sr)
+            import soundfile as sf
+            info = sf.info(file_path)
+            duration = float(info.duration)
         except Exception:
-            duration = None
+            try:
+                import librosa
+                duration = librosa.get_duration(filename=file_path)
+            except Exception:
+                duration = None
 
         # 3) Build standardized cue list with stage tags
         stage_cue_sets = [
@@ -260,15 +353,41 @@ class CuePipeline:
         # Re-sort after replacements
         resolved.sort(key=lambda c: c["time"])
 
-        # 7) Beat snapping only for specific types
+        # 7) Beat snapping with bar awareness
         snapped: List[Dict[str, Any]] = []
+        
+        # Major structural cues should snap to bars (16-beat / 4-bar phrases ideally, but 1-bar is safe)
+        BAR_SNAP_TYPES = {"intro", "outro", "drop", "breakdown"}
+        
         for cue in resolved:
             t = cue["time"]
-            if cue["type"] in SNAP_TYPES and beatgrid:
+            ctype = cue["type"]
+            
+            if not beatgrid:
+                snapped.append(cue)
+                continue
+                
+            if ctype in BAR_SNAP_TYPES:
+                 # Snap to nearest bar (downbeat)
+                 bpm_val = s_analyzer.get("bpm") or 120.0
+                 t_snapped = _nearest_bar(t, beatgrid, float(bpm_val))
+                 if abs(t - t_snapped) < 2.0: # Only snap if fairly close (prevent huge jumps)
+                     logs.append(f"snap-bar {ctype} {t:.2f} -> {t_snapped:.2f}")
+                     cue = dict(cue)
+                     cue["time"] = t_snapped
+                 else:
+                     # Fallback to nearest beat if bar snap is too far (likely pickup or misaligned grid)
+                     t_beat = _nearest_beat(t, beatgrid)
+                     logs.append(f"snap-beat {ctype} {t:.2f} -> {t_beat:.2f} (bar too far)")
+                     cue = dict(cue)
+                     cue["time"] = t_beat
+            elif ctype in SNAP_TYPES:
+                # Regular beat snap
                 t_snapped = _nearest_beat(t, beatgrid)
-                logs.append(f"snap {cue['type']} {t:.2f} -> {t_snapped:.2f}")
+                logs.append(f"snap {ctype} {t:.2f} -> {t_snapped:.2f}")
                 cue = dict(cue)
                 cue["time"] = t_snapped
+                
             snapped.append(cue)
 
         # 8) Final clamp, spacing, and sort

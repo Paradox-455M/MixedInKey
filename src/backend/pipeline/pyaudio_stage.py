@@ -42,7 +42,7 @@ class PyAudioStage:
     # 1) PyAudioAnalysis Implementation
     # ------------------------
 
-    def _pyaudio_segment(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def _pyaudio_segment(self, file_path: str, y_cache: Any = None, sr_cache: int = None) -> Optional[Dict[str, Any]]:
         """
         Attempt segmentation using pyAudioAnalysis.
         Returns dict or None on failure.
@@ -51,9 +51,18 @@ class PyAudioStage:
             import numpy as np
             from pyAudioAnalysis import audioBasicIO, ShortTermFeatures
             import scipy.ndimage as ndi
-
-            # Load audio
-            [sr, y] = audioBasicIO.read_audio_file(file_path)
+            
+            y = None
+            sr = None
+            
+            # Use cache if available
+            if y_cache is not None and sr_cache is not None:
+                y = y_cache
+                sr = sr_cache
+            else:
+                # Load audio
+                [sr, y] = audioBasicIO.read_audio_file(file_path)
+            
             if y is None or len(y) == 0:
                 return None
 
@@ -126,7 +135,7 @@ class PyAudioStage:
     # 2) Librosa Fallback Implementation
     # ------------------------
 
-    def _fallback_segment(self, file_path: str) -> Dict[str, Any]:
+    def _fallback_segment(self, file_path: str, y_cache: Any = None, sr_cache: int = None) -> Dict[str, Any]:
         """
         RMS-based novelty segmentation fallback.
         Always succeeds (as long as librosa installed).
@@ -135,7 +144,11 @@ class PyAudioStage:
         import librosa
         import scipy.ndimage as ndi
 
-        y, sr = librosa.load(file_path, mono=True, sr=None)
+        if y_cache is not None and sr_cache is not None:
+            y = y_cache
+            sr = sr_cache
+        else:
+            y, sr = librosa.load(file_path, mono=True, sr=None)
 
         hop = 512
         rms = librosa.feature.rms(y=y, hop_length=hop)[0]
@@ -172,15 +185,16 @@ class PyAudioStage:
     # Main API
     # ------------------------
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y: Any = None, sr: int = None, features: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Top-level pipeline API.
         Guaranteed safe output.
         """
-        result = self._pyaudio_segment(file_path)
+        result = self._pyaudio_segment(file_path, y_cache=y, sr_cache=sr)
 
         if result is None:
-            result = self._fallback_segment(file_path)
+            # Fallback also benefits from cache if available
+            result = self._fallback_segment(file_path, y_cache=y, sr_cache=sr)
 
         # Add cues (up to 6)
         cues = []

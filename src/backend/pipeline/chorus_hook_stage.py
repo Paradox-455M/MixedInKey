@@ -50,14 +50,18 @@ class ChorusHookStage:
     # Core Detection
     # -------------------------------------------
 
-    def _detect(self, y, sr, beats, hop) -> Tuple[Optional[float], Optional[float]]:
+    def _detect(self, y, sr, beats, hop, features=None) -> Tuple[Optional[float], Optional[float]]:
         import librosa
         import scipy.ndimage as ndi
         from scipy import signal
 
         try:
-            # Harmonic separation
-            y_harm, _ = librosa.effects.hpss(y)
+            # Use cached HPSS from features if available (avoids expensive recomputation)
+            if features and features.get('y_harm') is not None:
+                y_harm = features['y_harm']
+            else:
+                # Fallback: compute HPSS
+                y_harm, _ = librosa.effects.hpss(y)
 
             # Harmonic centroid motion
             centroid = librosa.feature.spectral_centroid(
@@ -152,20 +156,25 @@ class ChorusHookStage:
     # Public API
     # -------------------------------------------
 
-    def run(self, file_path: str) -> Dict[str, Any]:
+    def run(self, file_path: str, y: Any = None, sr: int = None, features: Dict[str, Any] = None) -> Dict[str, Any]:
         import librosa
 
         try:
-            y, sr = librosa.load(file_path, mono=True, sr=None)
+            if y is None or sr is None:
+                y, sr = librosa.load(file_path, mono=True, sr=None)
             hop = 512
 
-            # Beat grid
-            _, beat_frames = librosa.beat.beat_track(
-                y=y, sr=sr, hop_length=hop, units='frames', trim=False
-            )
-            beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+            # Use cached beat times from features if available (avoids duplicate beat tracking)
+            if features and features.get('beat_times') is not None:
+                beat_times = features['beat_times']
+            else:
+                # Fallback: compute beat grid
+                _, beat_frames = librosa.beat.beat_track(
+                    y=y, sr=sr, hop_length=hop, units='frames', trim=False
+                )
+                beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
 
-            chorus_t, hook_t = self._detect(y, sr, beat_times, hop)
+            chorus_t, hook_t = self._detect(y, sr, beat_times, hop, features)
 
         except Exception:
             chorus_t, hook_t = None, None

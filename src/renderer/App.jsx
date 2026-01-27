@@ -18,7 +18,13 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import './styles.css';
+import './sidebar.css';
 import HotCueCard from './HotCueCard';
+import SetPlannerTable from './SetPlannerTable';
+import Sidebar from './Sidebar';
+import DJMixView from './DJMixView';
+import SetPlannerView from './SetPlannerView';
+import LibraryTable from './LibraryTable';
 import { buildSetPlan } from './setPlanner';
 
 // Waveform Visualization Component
@@ -146,6 +152,7 @@ const WaveformVisualization = ({ waveformData, cuePoints, currentTime, duration,
 };
 
 const App = () => {
+  const [currentView, setCurrentView] = useState('analyze'); // 'analyze' | 'set-planner' | 'library'
   const [currentFile, setCurrentFile] = useState(null);
   const [currentFiles, setCurrentFiles] = useState([]);
   const [analysis, setAnalysis] = useState(null);
@@ -159,6 +166,8 @@ const App = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(null);
+  const [analyzedTracks, setAnalyzedTracks] = useState([]); // Library of analyzed tracks
 
   // Removed WaveSurfer initialization (no external waveform component)
 
@@ -172,6 +181,55 @@ const App = () => {
     setAnalysisProgress(null);
   };
 
+  // Store analyzed tracks in library
+  const addToLibrary = useCallback((file, analysisResult) => {
+    if (!analysisResult) return;
+    
+    const trackEntry = {
+      id: `${file.path}-${Date.now()}`,
+      file,
+      analysis: analysisResult,
+      addedAt: new Date().toISOString()
+    };
+
+    setAnalyzedTracks(prev => {
+      // Check if track already exists (by path)
+      const existingIndex = prev.findIndex(t => t.file.path === file.path);
+      if (existingIndex >= 0) {
+        // Update existing track
+        const updated = [...prev];
+        updated[existingIndex] = trackEntry;
+        return updated;
+      }
+      // Add new track
+      return [...prev, trackEntry];
+    });
+
+    // Also store in localStorage for persistence
+    try {
+      const stored = JSON.parse(localStorage.getItem('analyzedTracks') || '[]');
+      const existingIndex = stored.findIndex(t => t.file.path === file.path);
+      if (existingIndex >= 0) {
+        stored[existingIndex] = trackEntry;
+      } else {
+        stored.push(trackEntry);
+      }
+      localStorage.setItem('analyzedTracks', JSON.stringify(stored));
+    } catch (e) {
+      console.error('Failed to store track in localStorage:', e);
+    }
+  }, []);
+
+  // Load tracks from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('analyzedTracks') || '[]');
+      setAnalyzedTracks(stored);
+    } catch (e) {
+      console.error('Failed to load tracks from localStorage:', e);
+    }
+  }, []);
+
   const analyzeFiles = useCallback(async (files) => {
     if (!files || files.length === 0) return;
 
@@ -183,22 +241,66 @@ const App = () => {
     setError(null);
     setIsAnalyzing(true);
     setAnalysisProgress({ current: 0, total: files.length, name: '' });
+    setCurrentTrackIndex(null);
 
     try {
-      const results = [];
-      for (let i = 0; i < files.length; i += 1) {
-        const file = files[i];
-        setAnalysisProgress({ current: i + 1, total: files.length, name: file.name || file.path });
-        const result = await window.electronAPI.analyzeAudioFile(file.path);
-        results.push({ file, analysis: result });
-      }
-
+      // Use batch analysis for multiple files, single file analysis for one file
       if (files.length === 1) {
-        setAnalysis(results[0].analysis);
+        // Single file - use existing API
+        const file = files[0];
+        setAnalysisProgress({ current: 1, total: 1, name: file.name || file.path });
+        const result = await window.electronAPI.analyzeAudioFile(file.path);
+        setAnalysis(result);
+        addToLibrary(file, result);
       } else {
-        setAnalysisSet(results);
-        const plan = buildSetPlan(results, { energyCurve: 'warmup-peak-reset' });
-        setSetPlan(plan);
+        // Multiple files - use batch analysis with multi-threading
+        const filePaths = files.map(f => f.path);
+        
+        // Set up progress listener
+        const progressHandler = (progress) => {
+          setAnalysisProgress({
+            current: progress.current,
+            total: progress.total,
+            name: progress.file
+          });
+        };
+        
+        window.electronAPI.onBatchAnalysisProgress(progressHandler);
+        
+        try {
+          const batchResult = await window.electronAPI.analyzeAudioFilesBatch(filePaths);
+          
+          // Map batch results back to file objects
+          const results = [];
+          const fileMap = new Map(files.map(f => [f.path, f]));
+          
+          for (const result of batchResult.results || []) {
+            const file = fileMap.get(result.file_path);
+            if (file && result.analysis) {
+              results.push({ file, analysis: result.analysis });
+            } else if (file && result.error) {
+              console.error(`[FRONTEND] Analysis failed for ${file.name}: ${result.error}`);
+              // Still add it but mark as error
+              results.push({ file, analysis: null, error: result.error });
+            }
+          }
+          
+          if (results.length > 0) {
+            setAnalysisSet(results);
+            const plan = buildSetPlan(results, { energyCurve: 'warmup-peak-reset' });
+            setSetPlan(plan);
+            // Add all analyzed tracks to library
+            results.forEach(({ file, analysis: analysisResult }) => {
+              if (analysisResult) {
+                addToLibrary(file, analysisResult);
+              }
+            });
+          } else {
+            throw new Error('No files were successfully analyzed');
+          }
+        } finally {
+          window.electronAPI.removeBatchAnalysisProgressListener();
+        }
       }
     } catch (err) {
       console.error('[FRONTEND] Analysis error:', err);
@@ -493,48 +595,110 @@ const App = () => {
     ? `Analyzing ${analysisProgress.current}/${analysisProgress.total} • ${analysisProgress.name}`
     : 'Analyzing audio file...';
 
-  const handleExportRekordbox = async () => {
-    if (!setPlan || setPlan.error) return;
-    const playlistName = `Mixed In AI Set ${new Date().toISOString().slice(0, 10)}`;
-    const tracks = setPlan.tracks.map((track) => ({
-      path: track.filePath,
-      name: track.fileName,
-      artist: 'Unknown Artist',
-      album: 'Unknown Album',
-      key: track.key,
-      bpm: track.bpm,
-    }));
-
+  const handleExportRekordbox = useCallback(async ({ playlistName, tracks, includeCuePoints = false }) => {
     try {
       const exportPath = await window.electronAPI.exportRekordboxXml({
         playlistName,
         tracks,
+        includeCuePoints,
       });
       if (exportPath) {
         console.log('Rekordbox XML exported to:', exportPath);
+        return exportPath;
       }
     } catch (err) {
-      setError(`Export failed: ${err.message}`);
+      throw new Error(`Export failed: ${err.message}`);
     }
-  };
+  }, []);
 
-  return (
-    <div className="app">
-      {/* Header */}
-      <header className="header">
-        <div className="logo">
-          <div className="logo-icon">
-            <Music size={20} />
-          </div>
-          Mixed In AI
-        </div>
-        <div className="version">
-          v{window.electronAPI?.appVersion || '1.0.0'}
-        </div>
-      </header>
+  const handleExportSerato = useCallback(async ({ tracks, playlistName }) => {
+    try {
+      const result = await window.electronAPI.exportSetPlanSerato({
+        tracks,
+        playlistName,
+      });
+      if (result && result.file) {
+        console.log('Serato playlist exported to:', result.file);
+        return result;
+      }
+    } catch (err) {
+      throw new Error(`Serato export failed: ${err.message}`);
+    }
+  }, []);
 
-      {/* Main Content */}
-      <main className="main-content">
+  const handleExportTraktor = useCallback(async ({ tracks, playlistName }) => {
+    try {
+      const result = await window.electronAPI.exportSetPlanTraktor({
+        tracks,
+        playlistName,
+      });
+      if (result && result.file) {
+        console.log('Traktor playlist exported to:', result.file);
+        return result;
+      }
+    } catch (err) {
+      throw new Error(`Traktor export failed: ${err.message}`);
+    }
+  }, []);
+
+  // Render different views based on currentView state
+  const renderView = () => {
+    if (currentView === 'set-planner') {
+      return (
+        <SetPlannerView
+          analyzedTracks={analyzedTracks}
+          onAddToLibrary={addToLibrary}
+          onExportRekordbox={handleExportRekordbox}
+          onExportSerato={handleExportSerato}
+          onExportTraktor={handleExportTraktor}
+        />
+      );
+    }
+    
+    if (currentView === 'library') {
+      // Library view - show analyzed tracks
+      return (
+        <div className="library-view">
+          <h2 className="view-title">Library</h2>
+          <p className="view-subtitle">Browse your analyzed tracks</p>
+          {analyzedTracks.length === 0 ? (
+            <div className="empty-state">
+              <Music size={48} className="empty-icon" />
+              <p>No tracks analyzed yet. Analyze some tracks to build your library.</p>
+            </div>
+          ) : (
+            <div className="library-content">
+              <p className="library-count">{analyzedTracks.length} track(s) in library</p>
+              <LibraryTable
+                tracks={analyzedTracks}
+                onTrackSelect={(track) => {
+                  // Switch to analyze view and show this track
+                  setCurrentView('analyze');
+                  setCurrentFile(track.file);
+                  setAnalysis(track.analysis);
+                  setCurrentFiles([track.file]);
+                }}
+                currentTrack={null}
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    if (currentView === 'dj-mix') {
+        return (
+          <DJMixView 
+            analyzedTracks={analyzedTracks}
+            onAnalyzeFile={(file) => analyzeFile(file)}
+            onLoadToDeck={(track) => {}}
+          />
+        );
+    }
+
+    // Default: Analyze Track view (current implementation)
+    return (
+      <>
         {currentFiles.length === 0 ? (
           // Upload Area
           <div
@@ -608,31 +772,96 @@ const App = () => {
                         ) : (
                           <>
                             <div className="set-plan-actions">
-                              <button className="export-button" onClick={handleExportRekordbox}>
+                              <button className="export-button" onClick={async () => {
+                                if (!setPlan || setPlan.error) return;
+                                const playlistName = `Mixed In AI Set ${new Date().toISOString().slice(0, 10)}`;
+                                const tracks = setPlan.tracks.map((track) => {
+                                  const analysisData = analysisSet?.find(item => item.file?.path === track.filePath)?.analysis;
+                                  return {
+                                    path: track.filePath,
+                                    name: track.fileName,
+                                    artist: analysisData?.artist || 'Unknown Artist',
+                                    album: analysisData?.album || 'Unknown Album',
+                                    key: track.key,
+                                    bpm: track.bpm,
+                                    mixInTime: track.mixInTime,
+                                    mixOutTime: track.mixOutTime,
+                                    analysis: analysisData,
+                                  };
+                                });
+                                try {
+                                  await handleExportRekordbox({ playlistName, tracks, includeCuePoints: true });
+                                  setError(null);
+                                } catch (err) {
+                                  setError(`Export failed: ${err.message}`);
+                                }
+                              }}>
+                                <Download size={16} />
                                 Export Rekordbox XML
+                              </button>
+                              <button className="export-button" onClick={async () => {
+                                if (!setPlan || setPlan.error) return;
+                                const playlistName = `Mixed In AI Set ${new Date().toISOString().slice(0, 10)}`;
+                                const tracks = setPlan.tracks.map((track) => {
+                                  const analysisData = analysisSet?.find(item => item.file?.path === track.filePath)?.analysis;
+                                  return {
+                                    path: track.filePath,
+                                    file_path: track.filePath,
+                                    name: track.fileName,
+                                    artist: analysisData?.artist || 'Unknown Artist',
+                                    duration: analysisData?.duration || -1,
+                                  };
+                                });
+                                try {
+                                  await handleExportSerato({ tracks, playlistName });
+                                  setError(null);
+                                } catch (err) {
+                                  setError(`Export failed: ${err.message}`);
+                                }
+                              }}>
+                                <Download size={16} />
+                                Export Serato Playlist
+                              </button>
+                              <button className="export-button" onClick={async () => {
+                                if (!setPlan || setPlan.error) return;
+                                const playlistName = `Mixed In AI Set ${new Date().toISOString().slice(0, 10)}`;
+                                const tracks = setPlan.tracks.map((track) => {
+                                  const analysisData = analysisSet?.find(item => item.file?.path === track.filePath)?.analysis;
+                                  return {
+                                    file_path: track.filePath,
+                                    path: track.filePath,
+                                    title: track.fileName,
+                                    name: track.fileName,
+                                    artist: analysisData?.artist || 'Unknown Artist',
+                                    bpm: track.bpm,
+                                    key: track.key,
+                                    cue_points: analysisData?.cue_points || [],
+                                  };
+                                });
+                                try {
+                                  await handleExportTraktor({ tracks, playlistName });
+                                  setError(null);
+                                } catch (err) {
+                                  setError(`Export failed: ${err.message}`);
+                                }
+                              }}>
+                                <Download size={16} />
+                                Export Traktor Playlist
                               </button>
                             </div>
 
-                            <div className="set-plan-list">
-                              {setPlan?.tracks?.map((track, index) => (
-                                <div key={track.id} className="set-plan-track-card">
-                                  <div className="set-plan-track-index">{index + 1}</div>
-                                  <div className="set-plan-track-info">
-                                    <div className="set-plan-track-title">{track.fileName}</div>
-                                    <div className="set-plan-track-meta">
-                                      Key {track.key} • {track.bpm || 'N/A'} BPM • Energy {track.energy.toFixed(1)}
-                                    </div>
-                                  </div>
-                                  <div className="set-plan-track-mix">
-                                    <div>Mix in: {formatTimeSafe(track.mixInTime)}</div>
-                                    <div>Mix out: {formatTimeSafe(track.mixOutTime)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            <SetPlannerTable
+                              tracks={setPlan?.tracks || []}
+                              transitions={setPlan?.transitions || []}
+                              onTrackClick={(track, index) => {
+                                setCurrentTrackIndex(index);
+                                // Optionally load track details or play preview
+                              }}
+                              currentTrackIndex={currentTrackIndex}
+                            />
 
                             <div className="set-plan-transitions">
-                              <h4 className="subsection-title">Transitions</h4>
+                              <h4 className="subsection-title">Transition Details</h4>
                               <div className="set-plan-transition-grid">
                                 {setPlan?.transitions?.map((transition, index) => {
                                   const fromTrack = setPlan.tracks[index];
@@ -643,7 +872,7 @@ const App = () => {
                                         {fromTrack?.fileName} → {toTrack?.fileName}
                                       </div>
                                       <div className="set-plan-transition-score">
-                                        Transition score: {transition.score}
+                                        Transition score: {transition.score}%
                                       </div>
                                       <div className="set-plan-transition-meta">
                                         Mix out {formatTimeSafe(transition.mixOutTime)} • Mix in {formatTimeSafe(transition.mixInTime)} • {transition.overlapBars} bars
@@ -664,6 +893,7 @@ const App = () => {
                     </>
                   ) : (
                     <>
+                      {/* Single file analysis view - keep existing code */}
                       {/* Summary Table */}
                       <div className="summary-table">
                         <div className="summary-row summary-header">
@@ -1021,7 +1251,349 @@ const App = () => {
                           </div>
                         )}
                       </div>
-                    </>
+
+                      {/* Mix Quality Scorecard */}
+                      {analysis.mix_scorecard && !analysis.mix_scorecard.error ? (
+                        <div className="mix-scorecard-section">
+                          <h3 className="section-title">Mix Quality Scorecard</h3>
+                          <div className="scorecard-overview">
+                            <div className="scorecard-main">
+                              <div
+                                className="scorecard-score"
+                                style={{ borderColor: getScoreColor(getScoreStatus(analysis.mix_scorecard.overall_score)) }}
+                              >
+                                <div className="scorecard-score-value">
+                                  {formatScore(analysis.mix_scorecard.overall_score)}
+                                </div>
+                                <div className="scorecard-score-label">Overall Score</div>
+                              </div>
+                              <div className="scorecard-grade">
+                                <div className="scorecard-grade-label">Grade</div>
+                                <div className="scorecard-grade-value">{analysis.mix_scorecard.grade}</div>
+                              </div>
+                            </div>
+
+                            <div className="scorecard-categories">
+                              {analysis.mix_scorecard.categories && analysis.mix_scorecard.categories.map((cat) => (
+                                <div key={cat.id} className="scorecard-category-card">
+                                  <div className="scorecard-category-header">
+                                    <div className="scorecard-category-title">{cat.label}</div>
+                                    <div
+                                      className="scorecard-category-score"
+                                      style={{ color: getScoreColor(cat.status) }}
+                                    >
+                                      {formatScore(cat.score)}
+                                    </div>
+                                  </div>
+                                  <div className="scorecard-category-status" style={{ color: getScoreColor(cat.status) }}>
+                                    {cat.status}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {analysis.mix_scorecard.issues && analysis.mix_scorecard.issues.length > 0 && (
+                            <div className="scorecard-issues">
+                              <h4 className="subsection-title">Top Issues</h4>
+                              <div className="scorecard-issues-grid">
+                                {analysis.mix_scorecard.issues.slice(0, 3).map((issue, index) => (
+                                  <div key={`issue-${index}`} className="scorecard-issue-card">
+                                    <div className="scorecard-issue-title">{issue.message}</div>
+                                    <div className="scorecard-issue-summary">{issue.summary}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {analysis.mix_scorecard.suggestions && analysis.mix_scorecard.suggestions.length > 0 && (
+                            <div className="scorecard-suggestions">
+                              <h4 className="subsection-title">Suggestions</h4>
+                              <div className="scorecard-suggestions-grid">
+                                {analysis.mix_scorecard.suggestions.slice(0, 3).map((suggestion, index) => (
+                                  <div key={`suggestion-${index}`} className="scorecard-suggestion-card">
+                                    {suggestion.message}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : analysis.mix_scorecard?.error ? (
+                        <div className="error">
+                          <AlertCircle size={16} />
+                          Mix scorecard unavailable: {analysis.mix_scorecard.error}
+                        </div>
+                      ) : null}
+
+                      {/* Audio Controls */}
+                      <div className="waveform-section">
+                        <div className="waveform-container">
+                          <div className="waveform-controls">
+                            <button 
+                              className="play-button"
+                              onClick={isPlaying ? pauseAudio : playAudio}
+                            >
+                              {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                              {isPlaying ? 'Pause' : 'Play'}
+                            </button>
+                            <div className="time-display">
+                              {formatTime(currentTime)} / {formatTime(duration)}
+                            </div>
+                          </div>
+                        </div>
+                        <audio
+                          ref={audioRef}
+                          src={`file://${analysis.file_path}`}
+                          preload="metadata"
+                        />
+                      </div>
+
+                      {/* Cue Columns: DJ Cues (left) + Hot Cues (right) */}
+                      <div className="cue-columns">
+                        {/* LEFT: DJ Cues */}
+                        <div>
+                          <h3 className="section-title">DJ Cue Points</h3>
+                          <div className="cue-points">
+                            {analysis.cue_points && analysis.cue_points.map((cue, index) => (
+                              <div 
+                                key={index} 
+                                className="cue-point-card clickable" 
+                                style={{ borderLeftColor: getCueColor(cue) }}
+                                onClick={() => handleCuePointClick(cue)}
+                              >
+                                <div className="cue-header">
+                                  <div className="cue-icon" style={{ backgroundColor: getCueColor(cue) }}>
+                                    <FileAudio size={16} />
+                                  </div>
+                                  <div className="cue-info">
+                                    <div className="cue-name">{cue.name}</div>
+                                    <div className="cue-time">
+                                      <Clock size={12} />
+                                      {formatTime(cue.time)}
+                                    </div>
+                                  </div>
+                                  <div className="cue-type-badge" style={{ backgroundColor: getCueColor(cue) }}>
+                                    {cue.type.toUpperCase()}
+                                  </div>
+                                  <div className="play-cue-button">
+                                    <Play size={12} />
+                                  </div>
+                                </div>
+                                <div className="cue-description">
+                                  {getCueDescription(cue)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* RIGHT: Hot Cues */}
+                        <div>
+                          <h3 className="section-title">Hot Cues</h3>
+                          <div className="cue-points">
+                            {Array.isArray(analysis.hotcues) && analysis.hotcues.map((h, index) => (
+                              <HotCueCard key={index} slot={h.slot} cue={h.cue} onPlay={handleHotCuePlay} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Energy Analysis */}
+                      <div className="energy-analysis-section">
+                        <h3 className="section-title">Energy Analysis</h3>
+                        {analysis.energy_analysis && (
+                          <div className="energy-analysis-content">
+                            <div className="energy-overview">
+                              <div className="energy-level-display">
+                                <div className="energy-level-number">{analysis.energy_analysis.energy_level}</div>
+                                <div className="energy-level-name">{analysis.energy_analysis.energy_level_name}</div>
+                                <div className="energy-description">{analysis.energy_analysis.energy_description}</div>
+                              </div>
+                            </div>
+                            
+                            {/* Energy Profile Chart */}
+                            {(() => {
+                              const curve = getEnergyCurve();
+                              return curve && curve.length > 1;
+                            })() && (
+                              <div className="energy-profile-chart">
+                                <h4 className="chart-title">Energy Profile</h4>
+                                <div className="energy-line-container">
+                                  {/* Y grid lines */}
+                                  {[2,4,6,8,10].map((tick) => (
+                                    <div key={`grid-${tick}`} className="energy-grid-line" style={{ bottom: `${(tick/10)*100}%` }}>
+                                      <div className="energy-grid-label">{tick}</div>
+                                    </div>
+                                  ))}
+                                  {/* Polyline path over normalized coordinates */}
+                                  <svg className="energy-line-svg" preserveAspectRatio="none" viewBox="0 0 1000 100">
+                                    <defs>
+                                      <linearGradient id="energy-gradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#a855f7" stopOpacity="0.35" />
+                                        <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+                                      </linearGradient>
+                                    </defs>
+                                    {(() => {
+                                      const curve = getEnergyCurve();
+                                      const normPoints = curve.map(pt => {
+                                        const x = Math.max(0, Math.min(1, (pt.time || 0) / (analysis.duration || 1)));
+                                        const y = Math.max(0, Math.min(1, (pt.energy || 1) / 10));
+                                        return { x: x * 1000, y: (1 - y) * 100 };
+                                      });
+                                      if (normPoints.length === 0) return null;
+                                      const polyPoints = normPoints.map(p => `${p.x},${p.y}`).join(' ');
+                                      const areaPoints = `0,100 ${polyPoints} 1000,100`;
+                                      return (
+                                        <>
+                                          <polygon className="energy-area" points={areaPoints} fill="url(#energy-gradient)" />
+                                          <polyline className="energy-polyline" points={polyPoints} />
+                                          {/* Cue markers */}
+                                          <g className="energy-markers">
+                                            {analysis.cue_points && analysis.cue_points.map((cue, idx) => {
+                                              const t = Math.max(0, Math.min(analysis.duration || 1, cue.time || 0));
+                                              const xn = (t / (analysis.duration || 1));
+                                              // nearest energy value
+                                              const curveData = getEnergyCurve();
+                                              let nearest = curveData[0];
+                                              let minDiff = Math.abs((nearest?.time || 0) - t);
+                                              for (let i = 1; i < curveData.length; i++) {
+                                                const d = Math.abs((curveData[i].time || 0) - t);
+                                                if (d < minDiff) { nearest = curveData[i]; minDiff = d; }
+                                              }
+                                              const yn = Math.max(0, Math.min(1, ((nearest?.energy || 1) / 10)));
+                                              const cx = xn * 1000;
+                                              const cy = (1 - yn) * 100;
+                                              const color = getCueColor(cue);
+                                              return (
+                                                <g key={idx}>
+                                                  <circle className="energy-marker" cx={cx} cy={cy} r={2.8} fill={color} />
+                                                  <circle className="energy-marker-outline" cx={cx} cy={cy} r={3.6} fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="0.8" />
+                                                  <title>{`${cue.name} • ${cue.type.toUpperCase()} • ${formatTime(t)} • Energy ${nearest?.energy?.toFixed?.(2) || ''}`}</title>
+                                                </g>
+                                              );
+                                            })}
+                                          </g>
+                                        </>
+                                      );
+                                    })()}
+                                  </svg>
+                                </div>
+                                {/* Timeline ticks */}
+                                <div className="energy-timeline">
+                                  {(() => {
+                                    const ticks = [];
+                                    const step = (analysis.duration || 0) > 600 ? 60 : 30;
+                                    const count = Math.floor((analysis.duration || 0) / step) + 1;
+                                    for (let i = 0; i < count; i++) {
+                                      const t = i * step;
+                                      ticks.push(
+                                        <div key={`tick-${i}`} className="energy-tick" style={{ left: `${(t / (analysis.duration || 1)) * 100}%` }}>
+                                          <div className="energy-tick-label">{formatTime(t)}</div>
+                                        </div>
+                                      );
+                                    }
+                                    return ticks;
+                                  })()}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Harmonic Mixing */}
+                      <div className="harmonic-mixing-section">
+                        <h3 className="section-title">Harmonic Mixing</h3>
+                        {analysis.harmonic_mixing && (
+                          <div className="harmonic-mixing-content">
+                            <div className="current-key-info">
+                              <div className="key-display">
+                                <div className="key-label">Current Key</div>
+                                <div className="key-value">{getKeyDisplay(analysis.harmonic_mixing.current_key)}</div>
+                              </div>
+                            </div>
+                            
+                            <div className="compatible-keys">
+                              <h4 className="subsection-title">Compatible Keys</h4>
+                              <div className="compatible-keys-grid">
+                                {analysis.harmonic_mixing.compatible_keys.slice(0, 6).map((key, index) => (
+                                  <div key={index} className="compatible-key-card">
+                                    <div className="compatible-key-name">{getKeyDisplay(key.key)}</div>
+                                    <div className="compatibility-score">{Math.round(key.compatibility * 100)}%</div>
+                                    <div className="technique-name">{key.technique.replace('_', ' ')}</div>
+                                    <div className="technique-description">{key.description}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="energy-suggestions">
+                              <h4 className="subsection-title">Energy Mixing Suggestions</h4>
+                              <div className="suggestions-grid">
+                                {analysis.harmonic_mixing.energy_build_suggestions.map((suggestion, index) => (
+                                  <div key={index} className="suggestion-card">
+                                    <div className="suggestion-type">Energy Build</div>
+                                    <div className="suggestion-key">{getKeyDisplay(suggestion.key)}</div>
+                                    <div className="suggestion-description">{suggestion.description}</div>
+                                    <div className="energy-boost">{suggestion.energy_boost}</div>
+                                  </div>
+                                ))}
+                                {analysis.harmonic_mixing.energy_release_suggestions.map((suggestion, index) => (
+                                  <div key={index} className="suggestion-card">
+                                    <div className="suggestion-type">Energy Release</div>
+                                    <div className="suggestion-key">{getKeyDisplay(suggestion.key)}</div>
+                                    <div className="suggestion-description">{suggestion.description}</div>
+                                    <div className="energy-reduction">{suggestion.energy_reduction}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Advanced Mixing Techniques */}
+                      <div className="advanced-mixing-section">
+                        <h3 className="section-title">Advanced Mixing Techniques</h3>
+                        {analysis.advanced_mixing && (
+                          <div className="advanced-mixing-content">
+                            <div className="technique-cards">
+                              <div className="technique-card">
+                                <div className="technique-title">Power Block Mixing</div>
+                                <div className="technique-description">
+                                  Rapid transitions between tracks in the same key with energy variation
+                                </div>
+                                <div className="technique-strategy">
+                                  Use tracks in the same key but with varying energy levels for rapid transitions
+                                </div>
+                              </div>
+                              
+                              <div className="technique-card">
+                                <div className="technique-title">Energy Boost Mixing</div>
+                                <div className="technique-description">
+                                  Sudden energy increases using high-energy tracks
+                                </div>
+                                <div className="technique-strategy">
+                                  Use high-energy tracks for dramatic energy increases
+                                </div>
+                              </div>
+                              
+                              <div className="technique-card">
+                                <div className="technique-title">Beat Jumping</div>
+                                <div className="technique-description">
+                                  Jumping between specific beat-aligned sections using cue points
+                                </div>
+                                <div className="technique-strategy">
+                                  Use cue points for creative transitions and energy control
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      </>
                   )}
                 </>
               ) : null}
@@ -1030,6 +1602,15 @@ const App = () => {
             {/* Removed right-side waveform panel to simplify UI */}
           </div>
         )}
+      </>
+    );
+  };
+
+  return (
+    <div className="app">
+      <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+      <main className="main-content app-with-sidebar">
+        {renderView()}
       </main>
     </div>
   );

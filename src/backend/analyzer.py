@@ -11,6 +11,10 @@ import os
 if os.environ.get('NUMBA_DISABLE_JIT') == '1':
     os.environ.pop('NUMBA_DISABLE_JIT', None)
 
+import warnings
+# Suppress specific librosa warnings
+warnings.filterwarnings('ignore', category=FutureWarning, module='librosa')
+
 # Configure thread counts (override with MIXEDINAI_THREADS). Defaults to a safe multi-core value.
 def _configure_threads():
     desired = os.environ.get('MIXEDINAI_THREADS')
@@ -52,6 +56,7 @@ from typing import List, Dict, Tuple, Optional
 import time
 import subprocess
 import shutil
+import concurrent.futures
 
 # Configure logging
 logging.basicConfig(
@@ -71,6 +76,68 @@ except Exception:
         from pipeline.pipeline import CuePipeline as _CuePipeline  # type: ignore
     except Exception:
         _CuePipeline = None  # type: ignore
+
+class CacheManager:
+    """Manages persistent caching of analysis results."""
+    def __init__(self, cache_file=None):
+        if cache_file is None:
+            self.cache_file = os.path.expanduser("~/.mixed_in_ai_cache.json")
+        else:
+            self.cache_file = cache_file
+        self.cache = self._load_cache()
+
+    def _load_cache(self):
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load cache: {e}")
+                return {}
+        return {}
+
+    def _save_cache(self):
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.cache, f)
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
+
+    def get(self, file_path):
+        """Get analysis from cache if file hasn't changed."""
+        try:
+            abs_path = os.path.abspath(file_path)
+            if abs_path not in self.cache:
+                return None
+            
+            entry = self.cache[abs_path]
+            # Check if file still exists and mtime matches
+            if not os.path.exists(abs_path):
+                return None
+                
+            mtime = os.path.getmtime(abs_path)
+            if abs(entry.get('mtime', 0) - mtime) < 0.001:  # Float comparison
+                return entry.get('analysis')
+            return None
+        except Exception as e:
+            logger.warning(f"Cache lookup failed for {file_path}: {e}")
+            return None
+
+    def set(self, file_path, analysis):
+        """Save analysis to cache."""
+        try:
+            abs_path = os.path.abspath(file_path)
+            if not os.path.exists(abs_path):
+                return
+                
+            mtime = os.path.getmtime(abs_path)
+            self.cache[abs_path] = {
+                'mtime': mtime,
+                'analysis': analysis
+            }
+            self._save_cache()
+        except Exception as e:
+            logger.warning(f"Cache save failed for {file_path}: {e}")
 
 class AudioAnalyzer:
     def __init__(self):
@@ -2139,6 +2206,11 @@ class AudioAnalyzer:
             start_time = time.time()
             # Unified, robust loading
             y, sr, duration = self.load_audio(file_path)
+            
+            # Precompute shared features BEFORE pipeline for reuse across all stages
+            # This eliminates duplicate HPSS, beat tracking, and spectral computations
+            self._features = self._precompute_features(y, sr)
+            
             # --- Run Modular Cue Pipeline ---
             pipeline_result = {"cues": [], "beatgrid": [], "stages": {}}
             # Guard against recursive invocation when called from pipeline analyzer_stage
@@ -2146,7 +2218,15 @@ class AudioAnalyzer:
             if _CuePipeline is not None and _os_guard.environ.get("MIXEDIN_PIPELINE_ACTIVE") != "1":
                 try:
                     pipeline = _CuePipeline()
-                    pipeline_result = pipeline.run(file_path)
+                    # Pass audio buffer AND pre-computed features to pipeline stages
+                    # This avoids redundant IO, resampling, and heavy DSP in stages.
+                    pipeline_result = pipeline.run(file_path, y=y, sr=sr, features=self._features)
+                except TypeError:
+                     # Fallback for old calls or if pipeline doesn't support features yet
+                     try:
+                         pipeline_result = pipeline.run(file_path, y=y, sr=sr)
+                     except TypeError:
+                         pipeline_result = pipeline.run(file_path)
                 except Exception as e:
                     pipeline_result = {
                         "cues": [],
@@ -2154,18 +2234,25 @@ class AudioAnalyzer:
                         "stages": {},
                         "error": f"pipeline_failed: {e}"
                     }
-            # Precompute shared features for reuse
-            self._features = self._precompute_features(y, sr)
 
             # Generate waveform data for visualization
             waveform_data = self._generate_waveform_data(y, sr)
             audio_stats = self._calculate_audio_stats(y)
 
             # Basic audio analysis
-            camelot_key, mode, key_conf = self.detect_key_rekordbox_algorithm(y, sr)
-            bpm = int(round(self.detect_bpm_rekordbox_algorithm(y, sr)))
-            # Compute energy early to drive genre presets
-            energy_analysis = self._analyze_energy_levels(y, sr)
+            # Parallelize independent heavy tasks
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                future_key = executor.submit(self.detect_key_rekordbox_algorithm, y, sr)
+                future_bpm = executor.submit(self.detect_bpm_rekordbox_algorithm, y, sr)
+                future_energy = executor.submit(self._analyze_energy_levels, y, sr)
+                future_structure = executor.submit(self.detect_song_structure_rekordbox_algorithm, y, sr, duration)
+
+                camelot_key, mode, key_conf = future_key.result()
+                bpm = int(round(future_bpm.result()))
+                # Compute energy early to drive genre presets
+                energy_analysis = future_energy.result()
+                song_structure = future_structure.result()
+
             # Determine genre and cue detection parameters
             genre, cue_params = self.detect_genre_and_params(bpm, energy_analysis, y, sr)
             # If pipeline already found intro/outro, prefer them
@@ -2189,7 +2276,6 @@ class AudioAnalyzer:
                     cue_points = [c for c in (cue_points or []) if str(c.get("type", "")).lower() != "outro"]
             except Exception:
                 pass
-            song_structure = self.detect_song_structure_rekordbox_algorithm(y, sr, duration)
 
             # Advanced analysis modules (can be heavy; add short-circuit for long files)
             # Make energy profile align with shown cue points for UI consistency
@@ -2286,6 +2372,26 @@ class AudioAnalyzer:
             except Exception as e:
                 analysis["mix_scorecard"] = {"error": str(e)}
 
+            # Auto-embed analysis results to file tags (ID3/MP4/FLAC)
+            try:
+                from tools.id3_tagger import ID3Tagger
+                tagger = ID3Tagger()
+                tag_result = tagger.write_tags(
+                    file_path=file_path,
+                    key=f"{camelot_key}",
+                    bpm=float(bpm),
+                    energy=int(energy_analysis.get('energy_level', 5)),
+                    camelot=camelot_key,
+                    cue_points=analysis.get('cue_points', [])[:8]
+                )
+                analysis["tags_written"] = tag_result
+                logger.info(f"Embedded tags to file: {tag_result}")
+            except ImportError:
+                analysis["tags_written"] = {"status": "skipped", "reason": "mutagen not installed"}
+            except Exception as e:
+                analysis["tags_written"] = {"status": "error", "error": str(e)}
+                logger.warning(f"Failed to write ID3 tags: {e}")
+
             return analysis
 
         except Exception as e:
@@ -2323,6 +2429,22 @@ class AudioAnalyzer:
             feats['mfcc_512'] = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=512)
         except Exception:
             feats['mfcc_512'] = None
+        try:
+            # Beat tracking - compute once for all stages
+            tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=512, units='frames', trim=False)
+            beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
+            feats['beat_times'] = beat_times
+            feats['tempo'] = float(tempo if np.size(tempo) == 1 else tempo[0])
+        except Exception:
+            feats['beat_times'] = None
+            feats['tempo'] = None
+        try:
+            # RMS for energy analysis
+            feats['rms_512'] = librosa.feature.rms(y=y, hop_length=512)[0]
+        except Exception:
+            feats['rms_512'] = None
+        # Store sample rate for reference
+        feats['sr'] = sr
         return feats
 
     def _energy_profile_from_cues(self, y: np.ndarray, sr: int, bpm: float, duration: float, cue_points: List[dict]) -> List[Dict[str, float]]:
@@ -2515,6 +2637,111 @@ class AudioAnalyzer:
                 'beat_jump_opportunities': [],
                 'cue_point_suggestions': []
             }
+
+    def analyze_batch_parallel(self, file_paths: List[str], progress_callback=None) -> List[Dict]:
+        """
+        Analyze multiple files in parallel using ThreadPoolExecutor.
+        Each file runs on a separate thread.
+        
+        Args:
+            file_paths: List of file paths to analyze
+            progress_callback: Optional callback function(current, total, current_file_path)
+        
+        Returns:
+            List of dicts with 'file_path', 'analysis', and optionally 'error'
+        """
+        results = []
+        total = len(file_paths)
+        files_to_process = []
+        
+        # Initialize cache manager
+        cache_manager = CacheManager()
+        
+        # Check cache first
+        for path in file_paths:
+            cached_analysis = cache_manager.get(path)
+            if cached_analysis:
+                logger.info(f"Using cached analysis for {path}")
+                results.append({
+                    'file_path': path,
+                    'analysis': cached_analysis
+                })
+                if progress_callback:
+                    progress_callback(len(results), total, path)
+            else:
+                files_to_process.append(path)
+        
+        if not files_to_process:
+            return results
+            
+        # Limit concurrent workers to avoid overwhelming system
+        # Use fewer workers for large batches to prevent memory issues
+        cpu_count = os.cpu_count() or 4
+        
+        # Adaptive worker count based on remaining files
+        num_remaining = len(files_to_process)
+        if num_remaining > 20:
+            max_workers = min(2, cpu_count)  # Very conservative for large batches
+        elif num_remaining > 5:
+            max_workers = min(4, cpu_count)  # Moderate for medium batches
+        else:
+            max_workers = min(num_remaining, cpu_count, 4)  # Cap at 4 workers max
+        
+        logger.info(f"Batch analysis: {num_remaining} files to process (cached: {len(results)}), using {max_workers} workers")
+        
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_path = {
+                    executor.submit(self.analyze_audio, path): path 
+                    for path in files_to_process
+                }
+                
+                # Process completed tasks as they finish
+                for future in concurrent.futures.as_completed(future_to_path):
+                    path = future_to_path[future]
+                    try:
+                        result = future.result(timeout=300)  # 5 minute timeout per file
+                        
+                        # Cache successful results
+                        if result:
+                            cache_manager.set(path, result)
+                            
+                        results.append({
+                            'file_path': path,
+                            'analysis': result
+                        })
+                        if progress_callback:
+                            progress_callback(len(results), total, path)
+                    except concurrent.futures.TimeoutError:
+                        logger.error(f"Analysis timeout for {path}")
+                        results.append({
+                            'file_path': path,
+                            'analysis': None,
+                            'error': 'Analysis timeout (exceeded 5 minutes)'
+                        })
+                        if progress_callback:
+                            progress_callback(len(results), total, path)
+                    except Exception as e:
+                        logger.error(f"Analysis failed for {path}: {e}")
+                        import traceback
+                        logger.debug(f"Traceback: {traceback.format_exc()}")
+                        results.append({
+                            'file_path': path,
+                            'analysis': None,
+                            'error': str(e)
+                        })
+                        if progress_callback:
+                            progress_callback(len(results), total, path)
+        except Exception as e:
+            logger.error(f"Batch analysis executor failed: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            # Return partial results if any were collected
+            if not results:
+                raise
+        
+        return results
 
 def main():
     """Main entry point for command line usage."""

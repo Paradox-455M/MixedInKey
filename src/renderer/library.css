@@ -1,0 +1,419 @@
+/* Library Table Styles */
+.library-section {
+    background: var(--bg-secondary, #1f2937);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+
+.library-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.search-bar {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    padding: 8px 12px;
+    width: 300px;
+}
+
+.search-bar svg {
+    color: var(--text-secondary, #9ca3af);
+    margin-right: 8px;
+}
+
+.search-bar input {
+    background: transparent;
+    border: none;
+    color: var(--text-primary, #ffffff);
+    width: 100%;
+    outline: none;
+    font-size: 14px;
+}
+
+.filter-controls {
+    display: flex;
+    gap: 12px;
+}
+
+.filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    color: var(--text-secondary, #9ca3af);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary, #ffffff);
+}
+
+.filter-btn.active {
+    background: var(--accent-primary, #8b5cf6);
+    border-color: var(--accent-primary, #8b5cf6);
+    color: white;
+}
+
+.filter-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.library-table-wrapper {
+    overflow-x: auto;
+}
+
+.library-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.library-table th {
+    text-align: left;
+    padding: 12px 16px;
+    color: var(--text-secondary, #9ca3af);
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.library-table th:hover {
+    color: var(--text-primary, #ffffff);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.library-table th svg {
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.library-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-primary, #ffffff);
+    font-size: 14px;
+}
+
+.library-table tr {
+    transition: background 0.1s;
+    cursor: pointer;
+}
+
+.library-table tr:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.library-table tr.selected {
+    background: rgba(139, 92, 246, 0.15);
+    border-left: 3px solid var(--accent-primary, #8b5cf6);
+}
+
+.library-table tr.compatible {
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.library-table tr.multi-selected {
+    background: rgba(139, 92, 246, 0.15);
+    border-left: 3px solid var(--accent-primary, #8b5cf6);
+}
+
+.col-checkbox {
+    width: 40px;
+    text-align: center;
+    padding: 12px 8px !important;
+}
+
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 2px solid rgba(148, 163, 184, 0.5);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.library-table tr.multi-selected .checkbox-wrapper {
+    border-color: var(--accent-primary, #8b5cf6);
+    background: rgba(139, 92, 246, 0.2);
+}
+
+.checkbox-checked {
+    color: var(--accent-primary, #8b5cf6);
+}
+
+.track-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.track-icon {
+    color: var(--text-secondary, #9ca3af);
+}
+
+.key-pill {
+    display: inline-block;
+    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.key-pill.match {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+.energy-bar {
+    width: 100px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.energy-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+/* Mashup Panel */
+.mashup-panel {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(16, 185, 129, 0.05));
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 2rem;
+}
+
+.mashup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1rem;
+    color: #fff;
+}
+
+.mashup-icon {
+    color: #f59e0b;
+}
+
+.mashup-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.mashup-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mashup-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+}
+
+.score-ring {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid #10b981;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.mashup-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.mashup-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f3f4f6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.mashup-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+.mashup-key {
+    color: #a78bfa;
+    font-weight: 600;
+}
+
+.mashup-action {
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.mashup-card:hover .mashup-action {
+    opacity: 1;
+}
+
+/* Stems Panel */
+.stems-panel {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stems-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1rem;
+}
+
+.stems-icon {
+    color: #a855f7;
+}
+
+.pro-badge {
+    background: #a855f7;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.stems-intro {
+    text-align: center;
+    padding: 1rem;
+}
+
+.stems-intro p {
+    color: #cbd5e1;
+    font-size: 14px;
+    margin-bottom: 1rem;
+}
+
+.separate-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #a855f7;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    margin: 0 auto;
+    transition: all 0.2s;
+}
+
+.separate-btn:hover {
+    background: #9333ea;
+    transform: translateY(-1px);
+}
+
+.stems-loading {
+    text-align: center;
+    padding: 1rem;
+    color: #a855f7;
+}
+
+.stems-loading .spinner {
+    animation: spin 1s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+.stems-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.stems-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.stem-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stem-card.playing {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+}
+
+.stem-name {
+    font-weight: 600;
+    text-transform: capitalize;
+    color: #f3f4f6;
+}
+
+.stem-play-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.stem-play-btn:hover {
+    background: #a855f7;
+}

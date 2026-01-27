@@ -1,0 +1,331 @@
+/* Set Planner View Styles */
+
+.set-planner-view {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Mode Toggle */
+.mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  background: rgba(31, 41, 55, 0.6);
+  padding: 0.25rem;
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.mode-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: transparent;
+  border: none;
+  color: rgba(209, 213, 219, 0.7);
+  cursor: pointer;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.mode-button:hover {
+  color: rgba(209, 213, 219, 0.9);
+  background: rgba(55, 65, 81, 0.5);
+}
+
+.mode-button.active {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a855f7;
+}
+
+/* Drop Zone */
+.set-planner-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  border: 2px dashed rgba(139, 92, 246, 0.3);
+  border-radius: 16px;
+  background: rgba(139, 92, 246, 0.05);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  padding: 3rem;
+  margin-bottom: 2rem;
+}
+
+.set-planner-dropzone:hover,
+.set-planner-dropzone.drag-over {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  transform: scale(1.01);
+}
+
+.dropzone-icon {
+  color: #8b5cf6;
+  margin-bottom: 1.5rem;
+}
+
+.dropzone-text {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.dropzone-subtext {
+  font-size: 0.875rem;
+  color: rgba(148, 163, 184, 0.8);
+  margin-bottom: 1.5rem;
+}
+
+.dropzone-button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropzone-button:hover {
+  background: linear-gradient(135deg, #7c3aed, #9333ea);
+  transform: translateY(-1px);
+}
+
+/* Selected Files */
+.selected-files {
+  background: rgba(31, 41, 55, 0.6);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(17, 24, 39, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(75, 85, 99, 0.3);
+}
+
+.file-name {
+  flex: 1;
+  color: rgba(209, 213, 219, 0.9);
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-remove {
+  background: transparent;
+  border: none;
+  color: rgba(239, 68, 68, 0.7);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.file-remove:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.analyze-button {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.analyze-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed, #9333ea);
+  transform: translateY(-1px);
+}
+
+.analyze-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Library Selection */
+.library-selection {
+  background: rgba(31, 41, 55, 0.6);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.library-tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.library-track-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(17, 24, 39, 0.6);
+  border: 2px solid rgba(75, 85, 99, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.library-track-card:hover {
+  background: rgba(17, 24, 39, 0.8);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.library-track-card.selected {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: #8b5cf6;
+}
+
+.track-card-checkbox {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(148, 163, 184, 0.5);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.library-track-card.selected .track-card-checkbox {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.2);
+}
+
+.track-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.track-card-name {
+  font-weight: 600;
+  color: rgba(209, 213, 219, 0.95);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-card-meta {
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+.library-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(75, 85, 99, 0.3);
+}
+
+.selected-count {
+  color: rgba(148, 163, 184, 0.8);
+  font-size: 0.875rem;
+}
+
+.build-plan-button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.build-plan-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed, #9333ea);
+  transform: translateY(-1px);
+}
+
+.build-plan-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Set Plan Header */
+.set-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.set-plan-info {
+  flex: 1;
+}
+
+.set-plan-meta {
+  color: rgba(148, 163, 184, 0.8);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.clear-plan-button {
+  padding: 0.625rem 1.25rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-plan-button:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}

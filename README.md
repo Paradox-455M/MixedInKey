@@ -1,132 +1,73 @@
 # Mixed In AI
 
-An industry‑level alternative to Mixed In Key — a cross‑platform Electron + Python desktop app for DJs that analyzes audio files and automatically detects musically significant information like Hot Cues, DJ Cues, musical key, BPM, vocals, chorus/hook, and song structure.
+**Mixed In AI** is an advanced audio analysis tool designed for DJs and producers. It leverages AI and signal processing to analyze tracks for Key (Camelot notation), BPM, Energy levels, and structural Cue Points (Intro, Drop, Breakdown, Outro). It helps DJs build harmonically compatible sets and practice transitions with a built-in dual-deck player.
 
+## 🚀 Features Implemented
 
-## ✨ What’s inside
+### 🎵 Core Audio Analysis
+*   **Advanced Detection:** Automatically detects **BPM**, **Key** (Camelot Wheel), and **Energy Level** (1-10).
+*   **Structure Analysis:** Identifies key structural segments:
+    *   🟢 **Intro**
+    *   🔴 **Drop**
+    *   🔵 **Breakdown**
+    *   🟠 **Outro**
+    *   🟣 **Vocals/Chorus**
+*   **Batch Processing:** Multi-threaded analysis for processing entire folders quickly.
+*   **Persistent Caching:** Instant re-loading of previously analyzed tracks using `~/.mixed_in_ai_cache.json`.
 
-- AI‑driven cue intelligence (genre‑aware, beat‑aligned, energy + harmonic signals)
-- Full Hot Cue system (A–E) inspired by pro workflows
-- Modular, conflict‑aware pipeline (stages for beats, structure, chorus/hook, bridge)
-- Detailed confidence, reason, and tier on every cue for explainability
-- Modern UI showing DJ Cues and Hot Cues side‑by‑side with playback
+### 🎛️ DJ Mix View (Practice Mode)
+*   **Dual Interactive Decks:** Two fully functional decks (Deck A & Deck B) for testing blends.
+*   **Waveform Visualization:** High-performance canvas-based waveforms with color-coded cue markers.
+*   **Smart Library Suggestions:** Automatically suggests compatible tracks for the active deck based on harmonic mixing rules.
+*   **Session History:** Tracks your mix session and allows exporting the history.
+*   **Playback Controls:** Play, pause, and seek directly on the waveform.
 
+### 📝 Set Planner
+*   **Automated Playlist Building:** Generates set lists following specific energy curves (e.g., "Warm-up → Peak → Reset").
+*   **Transition Visualizer:** visually aligns the "Mix Out" of one track with the "Mix In" of the next to preview overlaps.
+*   **Harmonic Mixing:** Ensures key compatibility between consecutive tracks.
 
-## 🔥 Hot Cues (A–E)
+### 💾 Library & Export
+*   **Library Management:** Search, sort, and filter tracks by BPM, Key, and Energy.
+*   **Multi-Platform Export:** Export your playlists and cue points to:
+    *   **Rekordbox** (.xml)
+    *   **Serato** (.crate)
+    *   **Traktor** (.nml)
 
-Hot Cues are generated from the final merged cue set and mapped as follows:
+## 🛠️ Technology Stack
+*   **Frontend:** React, Electron, Canvas API (for waveforms)
+*   **Backend:** Python (librosa, numpy, scipy) for audio signal processing
+*   **Communication:** IPC between Electron (Node.js) and Python
 
-- A = Intro (first musical start after silence; beat‑aligned)
-- B = First Vocal / Verse (prefer before main drop; fallback: first chorus)
-- C = Chorus (prefer first chorus after drop; fallback: next vocal)
-- D = Drop (main energy peak; confidence + position scoring; beat‑snapped)
-- E = Outro (last structured ending; fallback: last phrase/end)
+## 🔮 Future Roadmap
 
-Quality guarantees:
+We have exciting plans to further enhance Mixed In AI:
 
-- Alias matching (intro/mix_in, chorus/hook, drop/climax, outro/mix_out, vocal/verse)
-- Minimum spacing of 6s to avoid clustering
-- Backfill to reach five anchors whenever the music allows
+*   **Stem Separation:** Integration of Spleeter/Demucs for real-time isolation of Vocals, Drums, Bass, and Other instruments.
+*   **AI Mashup Generator:** Intelligent suggestions for mashups based on phrasing and harmonic compatibility.
+*   **Cloud Sync:** Synchronize analysis data and playlists across multiple devices.
+*   **Advanced Metadata:** AI-driven Genre classification and Mood detection.
+*   **Real-time Effects:** Basic EQ (Low/Mid/High) and filters in the DJ Mix view for more realistic transition practice.
+*   **MIDI Support:** Control the DJ Mix decks using external MIDI controllers.
 
-Implementation: `src/backend/pipeline/hotcue_stage.py`
+## 📦 Installation & Setup
 
+1.  **Install Dependencies:**
+    ```bash
+    npm install
+    pip install -r requirements.txt
+    ```
 
-## 🧠 Pipeline architecture
+2.  **Run Development Mode:**
+    ```bash
+    npm start
+    ```
+    *This launches the Electron app and the Python backend server.*
 
-Stages live in `src/backend/pipeline/` and communicate via a normalized dictionary:
+3.  **Build for Production:**
+    ```bash
+    npm run make
+    ```
 
-- `autocue_stage.py` — optional external intro/outro hints (safe fallbacks)
-- `aubio_stage.py` — onset and beat detection (with `librosa` fallback)
-- `pyaudio_stage.py` — boundary detection via pyAudioAnalysis (RMS fallback)
-- `analyzer_stage.py` — wraps the main analyzer (drops, vocals, sections)
-+- `chorus_hook_stage.py` — harmonic centroid + spectral contrast (chorus/hook)
-- `bridge_energy_gap.py` — energy valley detection (bridge/energy gap)
-- `hotcue_stage.py` — maps final cues to A–E Hot Cues (spacing + backfill)
-- `pipeline.py` — orchestrator: priority merge, conflict resolution, selective beat‑snapping, validity rules, logs
-
-Pipeline output:
-
-```json
-{
-  "cues": [...],         // final DJ Cue set
-  "hotcues": [...],      // A–E hot cues
-  "beatgrid": [...],
-  "duration": 210.32,
-  "stages": {...},       // per‑stage outputs
-  "logs": [...]          // merge/snap decisions
-}
-```
-
-
-## 🛠️ Install
-
-Prereqs: Node.js v16+, Python 3.8+
-
-```bash
-npm install
-pip install -r requirements.txt
-```
-
-
-## ▶️ Run
-
-Dev (Electron + React):
-
-```bash
-npm run dev
-```
-
-CLI analyzer test:
-
-```bash
-python -m src.backend.test_analyzer /path/to/track.mp3
-```
-
-
-## 📦 Project structure
-
-```
-src/
-├─ main.js                # Electron main process
-├─ preload.js             # IPC bridge
-├─ renderer/              # React UI (DJ Cues + Hot Cues)
-└─ backend/               # Python analyzer + pipeline
-   ├─ analyzer.py
-   └─ pipeline/
-      ├─ autocue_stage.py
-      ├─ aubio_stage.py
-      ├─ pyaudio_stage.py
-      ├─ analyzer_stage.py
-      ├─ chorus_hook_stage.py
-      ├─ bridge_energy_gap.py
-      ├─ hotcue_stage.py
-      └─ pipeline.py
-```
-
-
-## 🧪 Features (high‑level)
-
-- Key detection (Camelot), multi‑algo BPM, energy profile
-- Genre‑adaptive intro/drop; phrase detection (8/16 bars)
-- Harmonic cue alignment (tension peaks / stability windows)
-- MFCC vocal gate (ZCR + band ratios + H/P ratio)
-- Confidence, tier, and reason labeling for every cue
-
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests if applicable
-4. Open a pull request
-
-
-## 📄 License
-
-MIT
-
-
-## 🔗 Links
-
-- Repo: `https://github.com/Paradox-455M/MixedInKey`
-
+---
+*Mixed In AI - Elevate your mix with data-driven insights.*
