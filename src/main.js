@@ -240,19 +240,20 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
         }
       });
 
-      let result = '';
-      let error = '';
+      // Use array buffer instead of string concatenation (O(1) push vs O(n) concat)
+      const resultChunks = [];
+      const errorChunks = [];
 
       pythonProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        console.log(`📤 [PYTHON STDOUT] ${output.trim()}`);
-        result += output;
+        resultChunks.push(data);  // Keep as Buffer for efficiency
+        if (process.env.DEBUG) {
+          console.log(`📤 [PYTHON STDOUT] ${data.toString().trim()}`);
+        }
       });
 
       pythonProcess.stderr.on('data', (data) => {
-        const errorOutput = data.toString();
-        console.log(`❌ [PYTHON STDERR] ${errorOutput.trim()}`);
-        error += errorOutput;
+        errorChunks.push(data);  // Keep as Buffer for efficiency
+        console.log(`❌ [PYTHON STDERR] ${data.toString().trim()}`);
       });
 
       const timeoutMs = Number(process.env.ANALYSIS_TIMEOUT_MS || 180000); // default 3 minutes
@@ -264,6 +265,10 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
 
       pythonProcess.on('close', (code) => {
         clearTimeout(timeoutId);
+        // Efficiently concatenate buffers once at the end
+        const result = Buffer.concat(resultChunks).toString('utf-8');
+        const error = Buffer.concat(errorChunks).toString('utf-8');
+
         console.log(`🏁 [MAIN] Python process exited with code: ${code}`);
         console.log(`📊 [MAIN] Result length: ${result.length}`);
         console.log(`📊 [MAIN] Error length: ${error.length}`);
@@ -271,7 +276,9 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
         if (code === 0) {
           try {
             console.log(`📋 [MAIN] Parsing JSON result...`);
-            console.log(`📄 [MAIN] Raw result preview: ${result.substring(0, 200)}...`);
+            if (process.env.DEBUG) {
+              console.log(`📄 [MAIN] Raw result preview: ${result.substring(0, 200)}...`);
+            }
             const analysis = JSON.parse(result);
             if (!analysis || analysis.error) {
               throw new Error(analysis?.message || 'Analyzer returned no data');
@@ -280,7 +287,7 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
             resolve(analysis);
           } catch (parseError) {
             console.log(`❌ [MAIN] JSON parse error: ${parseError.message}`);
-            console.log(`📄 [MAIN] Raw result: ${result}`);
+            console.log(`📄 [MAIN] Raw result: ${result.substring(0, 500)}`);
             reject(new Error(`Failed to parse analysis result: ${parseError.message}`));
           }
         } else {
@@ -425,24 +432,32 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
         }
       });
 
-      let result = '';
-      let error = '';
+      // Use array buffer instead of string concatenation (O(1) push vs O(n) concat)
+      const resultChunks = [];
+      const errorChunks = [];
       const progressUpdates = [];
+      let stderrBuffer = '';  // Line buffer for progress parsing
 
       pythonProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        console.log(`📤 [PYTHON STDOUT] ${output.trim()}`);
-        result += output;
+        resultChunks.push(data);  // Keep as Buffer for efficiency
+        if (process.env.DEBUG) {
+          console.log(`📤 [PYTHON STDOUT] ${data.toString().trim()}`);
+        }
       });
 
       pythonProcess.stderr.on('data', (data) => {
         const errorOutput = data.toString();
-        // Check if it's a progress update (JSON on stderr)
-        try {
-          const lines = errorOutput.split('\n').filter(l => l.trim());
-          for (const line of lines) {
-            if (line.trim().startsWith('{')) {
-              const progress = JSON.parse(line.trim());
+
+        // Line-buffered progress parsing
+        stderrBuffer += errorOutput;
+        const lines = stderrBuffer.split('\n');
+        stderrBuffer = lines.pop();  // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('{')) {
+            try {
+              const progress = JSON.parse(trimmedLine);
               if (progress.type === 'progress') {
                 progressUpdates.push(progress);
                 // Emit progress event to renderer
@@ -451,13 +466,16 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
                 }
                 continue;
               }
+            } catch (e) {
+              // Not valid JSON, treat as error
             }
           }
-        } catch (e) {
-          // Not JSON, treat as error
+          // Not a progress message, add to error buffer
+          if (trimmedLine) {
+            errorChunks.push(Buffer.from(line + '\n'));
+            console.log(`❌ [PYTHON STDERR] ${trimmedLine}`);
+          }
         }
-        console.log(`❌ [PYTHON STDERR] ${errorOutput.trim()}`);
-        error += errorOutput;
       });
 
       const timeoutMs = Number(process.env.BATCH_ANALYSIS_TIMEOUT_MS || 600000); // 10 minutes default
@@ -469,17 +487,21 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
 
       pythonProcess.on('close', (code, signal) => {
         clearTimeout(timeoutId);
+        // Efficiently concatenate buffers once at the end
+        const result = Buffer.concat(resultChunks).toString('utf-8');
+        const error = Buffer.concat(errorChunks).toString('utf-8');
+
         console.log(`🏁 [MAIN] Python batch process exited with code: ${code}, signal: ${signal}`);
+        console.log(`📊 [MAIN] Result length: ${result.length}, Error length: ${error.length}`);
 
         // Handle null exit code (process killed or crashed)
         if (code === null || code === undefined) {
-          const errorMsg = signal 
-            ? `Python batch process was killed by signal: ${signal}` 
+          const errorMsg = signal
+            ? `Python batch process was killed by signal: ${signal}`
             : `Python batch process crashed or was terminated unexpectedly`;
           console.log(`❌ [MAIN] ${errorMsg}`);
           console.log(`❌ [MAIN] Error output: ${error || '(no error output)'}`);
-          console.log(`❌ [MAIN] Standard output: ${result || '(no output)'}`);
-          
+
           // Try to parse any JSON output that might have been captured before crash
           if (result.trim()) {
             try {
@@ -492,7 +514,7 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
               // Not JSON, continue with generic error
             }
           }
-          
+
           reject(new Error(`${errorMsg}. ${error ? `Error output: ${error}` : 'Check logs for details.'}`));
           return;
         }
@@ -507,13 +529,13 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
             resolve(analysis);
           } catch (parseError) {
             console.log(`❌ [MAIN] JSON parse error: ${parseError.message}`);
-            console.log(`❌ [MAIN] Raw output: ${result}`);
+            console.log(`❌ [MAIN] Raw output preview: ${result.substring(0, 500)}`);
             reject(new Error(`Failed to parse batch analysis result: ${parseError.message}`));
           }
         } else {
           console.log(`❌ [MAIN] Python batch process failed with code ${code}`);
           console.log(`❌ [MAIN] Error output: ${error || '(no error output)'}`);
-          
+
           // Try to parse error output as JSON (Python script might have output JSON error before exit)
           if (result.trim()) {
             try {
@@ -526,7 +548,7 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
               // Not JSON, use generic error
             }
           }
-          
+
           reject(new Error(`Python batch process failed (code ${code}). ${error || 'No error details available.'}`));
         }
       });

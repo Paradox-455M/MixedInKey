@@ -1,56 +1,84 @@
 // Add audio logic to DJDeck
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Music, X, Upload, Play, Pause } from 'lucide-react';
 import WaveformCanvas from './WaveformCanvas';
 import { getKeyColor } from './keyUtils';
 
-const DJDeck = ({ 
-    id, 
-    track, 
-    isActive, 
-    onActivate, 
-    onLoadTrack, 
-    onClear 
+const DJDeck = ({
+    id,
+    track,
+    isActive,
+    onActivate,
+    onLoadTrack,
+    onClear
 }) => {
     const [hoveredCue, setHoveredCue] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
+    const [displayTime, setDisplayTime] = useState(0);  // Throttled time for display
     const deckRef = useRef(null);
     const audioRef = useRef(null);
+    const currentTimeRef = useRef(0);  // Real-time tracking without re-renders
+    const updateIntervalRef = useRef(null);
 
     // Reset state when track changes
     useEffect(() => {
         setIsPlaying(false);
-        setCurrentTime(0);
+        setDisplayTime(0);
+        currentTimeRef.current = 0;
         if (audioRef.current) {
             audioRef.current.pause();
             audioRef.current.currentTime = 0;
         }
     }, [track]);
 
-    const togglePlay = (e) => {
+    // Throttled display time updates (5fps instead of 4-10fps native events)
+    useEffect(() => {
+        if (isPlaying) {
+            // Update display time at 5fps (every 200ms)
+            updateIntervalRef.current = setInterval(() => {
+                setDisplayTime(currentTimeRef.current);
+            }, 200);
+        } else {
+            if (updateIntervalRef.current) {
+                clearInterval(updateIntervalRef.current);
+                updateIntervalRef.current = null;
+            }
+            // Sync display time when paused
+            setDisplayTime(currentTimeRef.current);
+        }
+
+        return () => {
+            if (updateIntervalRef.current) {
+                clearInterval(updateIntervalRef.current);
+            }
+        };
+    }, [isPlaying]);
+
+    const togglePlay = useCallback((e) => {
         e.stopPropagation();
         if (!audioRef.current) return;
-        
+
         if (isPlaying) {
             audioRef.current.pause();
         } else {
             audioRef.current.play();
         }
         setIsPlaying(!isPlaying);
-    };
+    }, [isPlaying]);
 
-    const handleTimeUpdate = () => {
+    // Update ref without causing re-render
+    const handleTimeUpdate = useCallback(() => {
         if (audioRef.current) {
-            setCurrentTime(audioRef.current.currentTime);
+            currentTimeRef.current = audioRef.current.currentTime;
         }
-    };
+    }, []);
 
-    const handleEnded = () => {
+    const handleEnded = useCallback(() => {
         setIsPlaying(false);
-        setCurrentTime(0);
-    };
+        currentTimeRef.current = 0;
+        setDisplayTime(0);
+    }, []);
 
     const onDrop = (acceptedFiles) => {
         if (acceptedFiles.length > 0) {
@@ -89,19 +117,20 @@ const DJDeck = ({
         setHoveredCue(null);
     };
 
-    const handleWaveformClick = (e) => {
+    const handleWaveformClick = useCallback((e) => {
         e.stopPropagation();
         if (!track || !audioRef.current || !deckRef.current) return;
 
         const rect = deckRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const width = rect.width;
-        const duration = track.duration || track.analysis.duration || 300;
-        
+        const duration = track.duration || track.analysis?.duration || 300;
+
         const seekTime = (x / width) * duration;
         audioRef.current.currentTime = seekTime;
-        setCurrentTime(seekTime);
-    };
+        currentTimeRef.current = seekTime;
+        setDisplayTime(seekTime);
+    }, [track]);
 
     return (
         <div 
@@ -144,7 +173,7 @@ const DJDeck = ({
                                     {track.analysis?.key || 'N/A'}
                                 </span>
                                 <span className="deck-time">
-                                    {formatTime(currentTime)} / {formatTime(track.duration || track.analysis?.duration)}
+                                    {formatTime(displayTime)} / {formatTime(track.duration || track.analysis?.duration)}
                                 </span>
                             </div>
                         </div>
@@ -186,7 +215,7 @@ const DJDeck = ({
                         <div 
                             className="deck-playhead"
                             style={{ 
-                                left: `${(currentTime / (track.duration || track.analysis?.duration || 1)) * 100}%` 
+                                left: `${(displayTime / (track.duration || track.analysis?.duration || 1)) * 100}%` 
                             }}
                         />
                         

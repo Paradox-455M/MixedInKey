@@ -43,6 +43,7 @@ THREAD_INFO = _configure_threads()
 import sys
 import json
 import math
+import sqlite3
 import numpy as np
 import librosa
 import soundfile as sf
@@ -78,66 +79,130 @@ except Exception:
         _CuePipeline = None  # type: ignore
 
 class CacheManager:
-    """Manages persistent caching of analysis results."""
+    """Manages persistent caching of analysis results using SQLite for O(1) operations."""
     def __init__(self, cache_file=None):
         if cache_file is None:
-            self.cache_file = os.path.expanduser("~/.mixed_in_ai_cache.json")
+            self.cache_file = os.path.expanduser("~/.mixed_in_ai_cache.db")
         else:
+            # Convert .json extension to .db if provided
+            if cache_file.endswith('.json'):
+                cache_file = cache_file[:-5] + '.db'
             self.cache_file = cache_file
-        self.cache = self._load_cache()
+        self.conn = None
+        self._init_db()
 
-    def _load_cache(self):
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load cache: {e}")
-                return {}
-        return {}
-
-    def _save_cache(self):
+    def _init_db(self):
+        """Initialize SQLite database with indexed table."""
         try:
-            with open(self.cache_file, 'w') as f:
-                json.dump(self.cache, f)
+            self.conn = sqlite3.connect(self.cache_file, check_same_thread=False)
+            self.conn.execute('''
+                CREATE TABLE IF NOT EXISTS cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime REAL NOT NULL,
+                    analysis TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_mtime ON cache(mtime)')
+            self.conn.commit()
         except Exception as e:
-            logger.warning(f"Failed to save cache: {e}")
+            logger.warning(f"Failed to initialize cache database: {e}")
+            self.conn = None
 
     def get(self, file_path):
-        """Get analysis from cache if file hasn't changed."""
+        """Get analysis from cache if file hasn't changed. O(1) lookup."""
+        if self.conn is None:
+            return None
         try:
             abs_path = os.path.abspath(file_path)
-            if abs_path not in self.cache:
-                return None
-            
-            entry = self.cache[abs_path]
-            # Check if file still exists and mtime matches
+
+            # Check if file still exists
             if not os.path.exists(abs_path):
                 return None
-                
-            mtime = os.path.getmtime(abs_path)
-            if abs(entry.get('mtime', 0) - mtime) < 0.001:  # Float comparison
-                return entry.get('analysis')
+
+            cursor = self.conn.execute(
+                'SELECT mtime, analysis FROM cache WHERE file_path = ?',
+                (abs_path,)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            cached_mtime, analysis_json = row
+            current_mtime = os.path.getmtime(abs_path)
+
+            # Validate mtime matches (file hasn't changed)
+            if abs(cached_mtime - current_mtime) < 0.001:  # Float comparison
+                return json.loads(analysis_json)
+
             return None
         except Exception as e:
             logger.warning(f"Cache lookup failed for {file_path}: {e}")
             return None
 
     def set(self, file_path, analysis):
-        """Save analysis to cache."""
+        """Save analysis to cache. O(1) insert/update."""
+        if self.conn is None:
+            return
         try:
             abs_path = os.path.abspath(file_path)
             if not os.path.exists(abs_path):
                 return
-                
+
             mtime = os.path.getmtime(abs_path)
-            self.cache[abs_path] = {
-                'mtime': mtime,
-                'analysis': analysis
-            }
-            self._save_cache()
+            analysis_json = json.dumps(analysis)
+
+            self.conn.execute(
+                'INSERT OR REPLACE INTO cache (file_path, mtime, analysis) VALUES (?, ?, ?)',
+                (abs_path, mtime, analysis_json)
+            )
+            self.conn.commit()
         except Exception as e:
             logger.warning(f"Cache save failed for {file_path}: {e}")
+
+    def clear(self):
+        """Clear all cached entries."""
+        if self.conn is None:
+            return
+        try:
+            self.conn.execute('DELETE FROM cache')
+            self.conn.commit()
+        except Exception as e:
+            logger.warning(f"Cache clear failed: {e}")
+
+    def remove(self, file_path):
+        """Remove a specific entry from cache."""
+        if self.conn is None:
+            return
+        try:
+            abs_path = os.path.abspath(file_path)
+            self.conn.execute('DELETE FROM cache WHERE file_path = ?', (abs_path,))
+            self.conn.commit()
+        except Exception as e:
+            logger.warning(f"Cache remove failed for {file_path}: {e}")
+
+    def get_stats(self):
+        """Get cache statistics."""
+        if self.conn is None:
+            return {'count': 0, 'size_bytes': 0}
+        try:
+            cursor = self.conn.execute('SELECT COUNT(*), SUM(LENGTH(analysis)) FROM cache')
+            row = cursor.fetchone()
+            return {
+                'count': row[0] or 0,
+                'size_bytes': row[1] or 0
+            }
+        except Exception:
+            return {'count': 0, 'size_bytes': 0}
+
+    def __del__(self):
+        """Close database connection on cleanup."""
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
 
 class AudioAnalyzer:
     def __init__(self):
@@ -245,214 +310,277 @@ class AudioAnalyzer:
 
         raise RuntimeError(f"ffmpeg decode failed after retries: {last_err}")
 
-    def detect_key_rekordbox_algorithm(self, y, sr):
-        """Industry-standard key detection algorithm matching Mixed In Key/Rekordbox accuracy."""
+    def detect_key_rekordbox_algorithm(self, y, sr, features=None):
+        """Industry-standard key detection algorithm matching Mixed In Key/Rekordbox accuracy.
+
+        Args:
+            y: Audio time series
+            sr: Sample rate
+            features: Optional precomputed features dict from _precompute_features()
+        """
         try:
-            # Estimate global tuning to improve chroma alignment
-            try:
-                tuning = float(librosa.estimate_tuning(y=y, sr=sr))
-            except Exception:
-                tuning = 0.0
+            # Use precomputed features if available, otherwise compute on demand
+            if features is None:
+                features = self._features if self._features else {}
+
+            # Get tuning from precomputed features or estimate
+            tuning = features.get('tuning', 0.0)
+            if tuning == 0.0 and 'tuning' not in features:
+                try:
+                    tuning = float(librosa.estimate_tuning(y=y, sr=sr))
+                except Exception:
+                    tuning = 0.0
+
             # Multi-algorithm approach for maximum accuracy
             results = []
-            
+
             # Algorithm 1: Enhanced Chroma-based detection (Rekordbox style)
-            result1 = self._detect_key_chroma_enhanced(y, sr)
+            result1 = self._detect_key_chroma_enhanced(y, sr, features)
             results.append(result1)
-            
+
             # Algorithm 2: Harmonic-Percussive separation + Chroma
-            result2 = self._detect_key_harmonic_percussive(y, sr)
+            result2 = self._detect_key_harmonic_percussive(y, sr, features)
             results.append(result2)
-            
+
             # Algorithm 3: Multi-resolution Chroma analysis
-            result3 = self._detect_key_multiresolution(y, sr)
+            result3 = self._detect_key_multiresolution(y, sr, features)
             results.append(result3)
-            
+
             # Algorithm 4: Windowed-majority over track segments
-            result4 = self._detect_key_windowed_majority(y, sr)
+            result4 = self._detect_key_windowed_majority(y, sr, features)
             results.append(result4)
-            
+
             # Algorithm 5: Beat-synchronous chroma voting
-            result5 = self._detect_key_beat_synchronous(y, sr)
+            result5 = self._detect_key_beat_synchronous(y, sr, features)
             results.append(result5)
-            
+
             # Weighted voting system (industry approach)
             final_key, final_mode, final_confidence = self._weighted_key_voting(results)
-            
+
             # Convert to Camelot format
             camelot_key = self.camelot_wheel.get(final_key, final_key)
-            
+
             return camelot_key, final_mode, final_confidence
-            
+
         except Exception as e:
             logger.error(f"Key detection failed: {str(e)}")
             return '8A', 'minor', 0.5
 
-    def _detect_key_chroma_enhanced(self, y, sr):
-        """Enhanced chroma-based key detection with preprocessing."""
-        # Pre-emphasis filter (industry standard)
-        y_preemph = np.append(y[0], y[1:] - 0.97 * y[:-1])
-        
-        # Extract high-quality chromagram
-        try:
-            tune = float(librosa.estimate_tuning(y=y, sr=sr))
-        except Exception:
-            tune = 0.0
-        chroma = librosa.feature.chroma_cqt(
-            y=y_preemph, sr=sr,
-            hop_length=512,
-            bins_per_octave=36,  # Higher resolution
-            n_chroma=12,
-            tuning=tune,
-            norm=2,
-            threshold=0.0
-        )
-        
+    def _detect_key_chroma_enhanced(self, y, sr, features=None):
+        """Enhanced chroma-based key detection with preprocessing.
+
+        Uses precomputed chroma_512 from features if available.
+        """
+        # Try to use precomputed chromagram
+        chroma = None
+        if features and features.get('chroma_512') is not None:
+            chroma = features['chroma_512']
+        else:
+            # Fallback: compute chromagram (pre-emphasis for better quality)
+            y_preemph = np.append(y[0], y[1:] - 0.97 * y[:-1])
+            try:
+                tune = features.get('tuning', 0.0) if features else 0.0
+                if tune == 0.0:
+                    tune = float(librosa.estimate_tuning(y=y, sr=sr))
+            except Exception:
+                tune = 0.0
+            chroma = librosa.feature.chroma_cqt(
+                y=y_preemph, sr=sr,
+                hop_length=512,
+                bins_per_octave=36,
+                n_chroma=12,
+                tuning=tune,
+                norm=2,
+                threshold=0.0
+            )
+
         # Temporal smoothing (reduces noise)
         chroma_smooth = ndimage.gaussian_filter1d(chroma, sigma=1.0, axis=1)
-        
+
         # Use weighted average (emphasize stable regions)
         weights = np.sum(chroma_smooth, axis=0)
-        weights = weights / np.max(weights)
+        max_weight = np.max(weights)
+        if max_weight > 0:
+            weights = weights / max_weight
         weights = np.power(weights, 2)  # Emphasize high-energy regions
-        
+
         chroma_avg = np.average(chroma_smooth, axis=1, weights=weights)
-        chroma_avg = chroma_avg / np.linalg.norm(chroma_avg)
-        
+        norm = np.linalg.norm(chroma_avg)
+        if norm > 0:
+            chroma_avg = chroma_avg / norm
+
         # Industry-standard key profiles (Temperley-Krumhansl)
         major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
         minor_profile = np.array([6.33, 2.68, 3.69, 5.38, 2.60, 3.67, 2.58, 4.95, 2.63, 3.71, 3.28, 3.73])
-        
+
         # Normalize profiles
         major_profile = major_profile / np.linalg.norm(major_profile)
         minor_profile = minor_profile / np.linalg.norm(minor_profile)
-        
+
         # Calculate correlations for all keys
         correlations = []
         key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        
+
         for i in range(12):
             try:
                 # Major correlation
                 major_shifted = np.roll(major_profile, i)
                 corr_major = np.corrcoef(chroma_avg.astype(float), major_shifted.astype(float))[0, 1]
                 correlations.append((key_names[i], 'major', corr_major if not np.isnan(corr_major) else 0))
-                
+
                 # Minor correlation
                 minor_shifted = np.roll(minor_profile, i)
                 corr_minor = np.corrcoef(chroma_avg.astype(float), minor_shifted.astype(float))[0, 1]
                 correlations.append((key_names[i].lower(), 'minor', corr_minor if not np.isnan(corr_minor) else 0))
-            except Exception as e:
-                # Fallback correlations
+            except Exception:
                 correlations.append((key_names[i], 'major', 0))
                 correlations.append((key_names[i].lower(), 'minor', 0))
-        
+
         # Find best match
         best_key, best_mode, best_corr = max(correlations, key=lambda x: x[2])
-        
+
         return best_key, best_mode, max(0, best_corr)
 
-    def _detect_key_harmonic_percussive(self, y, sr):
-        """Key detection using harmonic-percussive separation."""
-        # Separate harmonic and percussive components
-        y_harmonic, y_percussive = librosa.effects.hpss(y, margin=8.0)
-        
-        # Focus on harmonic content for key detection
-        try:
-            tune = float(librosa.estimate_tuning(y=y_harmonic, sr=sr))
-        except Exception:
-            tune = 0.0
-        chroma = librosa.feature.chroma_cqt(
-            y=y_harmonic, sr=sr,
-            hop_length=1024,
-            bins_per_octave=36,
-            n_chroma=12,
-            norm=2,
-            tuning=tune
-        )
-        
+    def _detect_key_harmonic_percussive(self, y, sr, features=None):
+        """Key detection using harmonic-percussive separation.
+
+        Uses precomputed y_harm and chroma_harm_1024 from features if available.
+        """
+        # Use precomputed chroma on harmonic component if available
+        chroma = None
+        if features and features.get('chroma_harm_1024') is not None:
+            chroma = features['chroma_harm_1024']
+        else:
+            # Fallback: compute HPSS and chroma
+            y_harmonic = features.get('y_harm', y) if features else y
+            if y_harmonic is y:
+                y_harmonic, _ = librosa.effects.hpss(y, margin=8.0)
+
+            try:
+                tune = features.get('tuning', 0.0) if features else 0.0
+            except Exception:
+                tune = 0.0
+            chroma = librosa.feature.chroma_cqt(
+                y=y_harmonic, sr=sr,
+                hop_length=1024,
+                bins_per_octave=36,
+                n_chroma=12,
+                norm=2,
+                tuning=tune
+            )
+
         # Remove percussive interference
         chroma_clean = np.maximum(chroma - 0.1, 0)
-        
+
         # Aggregate using harmonic mean (more stable)
-        chroma_avg = np.power(np.prod(chroma_clean + 1e-8, axis=1), 1.0/chroma_clean.shape[1])
-        chroma_avg = chroma_avg / np.linalg.norm(chroma_avg)
-        
+        n_frames = chroma_clean.shape[1]
+        if n_frames > 0:
+            chroma_avg = np.power(np.prod(chroma_clean + 1e-8, axis=1), 1.0 / n_frames)
+        else:
+            chroma_avg = np.mean(chroma_clean, axis=1)
+        norm = np.linalg.norm(chroma_avg)
+        if norm > 0:
+            chroma_avg = chroma_avg / norm
+
         # Use Krumhansl-Schmuckler profiles
         major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
         minor_profile = np.array([6.33, 2.68, 3.69, 5.38, 2.60, 3.67, 2.58, 4.95, 2.63, 3.71, 3.28, 3.73])
-        
+
         major_profile = major_profile / np.linalg.norm(major_profile)
         minor_profile = minor_profile / np.linalg.norm(minor_profile)
-        
+
         correlations = []
         key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        
+
         for i in range(12):
             major_shifted = np.roll(major_profile, i)
             minor_shifted = np.roll(minor_profile, i)
-            
+
             corr_major = np.dot(chroma_avg, major_shifted)
             corr_minor = np.dot(chroma_avg, minor_shifted)
-            
+
             correlations.append((key_names[i], 'major', corr_major))
             correlations.append((key_names[i].lower(), 'minor', corr_minor))
-        
+
         best_key, best_mode, best_corr = max(correlations, key=lambda x: x[2])
         return best_key, best_mode, max(0, best_corr)
 
-    def _detect_key_multiresolution(self, y, sr):
-        """Multi-resolution chroma analysis for robust key detection."""
+    def _detect_key_multiresolution(self, y, sr, features=None):
+        """Multi-resolution chroma analysis for robust key detection.
+
+        Uses precomputed chroma at multiple hop lengths and spectral centroids.
+        """
         # Multiple hop lengths for different time resolutions
         hop_lengths = [256, 512, 1024, 2048]
         chroma_features = []
-        
+
         for hop_length in hop_lengths:
-            chroma = librosa.feature.chroma_cqt(
-                y=y, sr=sr,
-                hop_length=hop_length,
-                bins_per_octave=36,
-                n_chroma=12,
-                norm=2
-            )
-            
+            # Use precomputed chromagram if available
+            chroma = None
+            centroid = None
+            if features:
+                chroma = features.get(f'chroma_{hop_length}')
+                centroid = features.get(f'spectral_centroid_{hop_length}')
+
+            # Fallback: compute if not cached
+            if chroma is None:
+                chroma = librosa.feature.chroma_cqt(
+                    y=y, sr=sr,
+                    hop_length=hop_length,
+                    bins_per_octave=36,
+                    n_chroma=12,
+                    norm=2
+                )
+            if centroid is None:
+                centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)[0]
+
             # Weight by spectral centroid (emphasize melodic content)
-            spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)[0]
-            weights = spectral_centroid / np.max(spectral_centroid)
-            
-            chroma_weighted = np.average(chroma, axis=1, weights=weights)
+            max_centroid = np.max(centroid)
+            if max_centroid > 0:
+                weights = centroid / max_centroid
+            else:
+                weights = np.ones_like(centroid)
+
+            # Handle shape mismatch between chroma and centroid
+            min_len = min(chroma.shape[1], len(weights))
+            chroma_weighted = np.average(chroma[:, :min_len], axis=1, weights=weights[:min_len])
             chroma_features.append(chroma_weighted)
-        
+
         # Combine multi-resolution features
         chroma_combined = np.mean(chroma_features, axis=0)
-        chroma_combined = chroma_combined / np.linalg.norm(chroma_combined)
-        
+        norm = np.linalg.norm(chroma_combined)
+        if norm > 0:
+            chroma_combined = chroma_combined / norm
+
         # Enhanced key profiles (combined Temperley and Krumhansl)
         major_profile = np.array([6.6, 2.0, 3.5, 2.3, 4.6, 4.2, 2.5, 5.4, 2.4, 3.8, 2.3, 2.9])
         minor_profile = np.array([6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 5.2, 2.7, 3.4, 3.4, 3.7])
-        
+
         major_profile = major_profile / np.linalg.norm(major_profile)
         minor_profile = minor_profile / np.linalg.norm(minor_profile)
-        
+
         correlations = []
         key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        
+
         for i in range(12):
             major_shifted = np.roll(major_profile, i)
             minor_shifted = np.roll(minor_profile, i)
-            
+
             # Use cosine similarity
             corr_major = np.dot(chroma_combined, major_shifted)
             corr_minor = np.dot(chroma_combined, minor_shifted)
-            
+
             correlations.append((key_names[i], 'major', corr_major))
             correlations.append((key_names[i].lower(), 'minor', corr_minor))
-        
+
         best_key, best_mode, best_corr = max(correlations, key=lambda x: x[2])
         return best_key, best_mode, max(0, best_corr)
 
-    def _detect_key_windowed_majority(self, y: np.ndarray, sr: int):
+    def _detect_key_windowed_majority(self, y: np.ndarray, sr: int, features=None):
         """Detect key by voting over overlapping windows with energy weighting.
+
+        Note: This method operates on segments and cannot fully leverage precomputed
+        features. The features parameter is accepted for interface consistency.
 
         Returns tuple (pitch_name, 'major'|'minor', confidence_in_0_1).
         """
@@ -529,14 +657,39 @@ class AudioAnalyzer:
         confidence = float(np.clip(score / (total_weight + 1e-9), 0.0, 1.0))
         return pitch, mode, confidence
 
-    def _detect_key_beat_synchronous(self, y: np.ndarray, sr: int):
-        """Key via beat-synchronous chroma aggregation (robust to percussion)."""
+    def _detect_key_beat_synchronous(self, y: np.ndarray, sr: int, features=None):
+        """Key via beat-synchronous chroma aggregation (robust to percussion).
+
+        Uses precomputed chroma_harm_512 and beat_frames from features if available.
+        """
         try:
-            # Harmonic component only
-            y_h, _ = librosa.effects.hpss(y, margin=8.0)
-            chroma = librosa.feature.chroma_cqt(y=y_h, sr=sr, hop_length=512, bins_per_octave=36, n_chroma=12, norm=2)
-            # Beat frames
-            tempo, beat_frames = librosa.beat.beat_track(y=y_h, sr=sr, hop_length=512, units='frames', trim=False)
+            # Use precomputed chroma on harmonic component
+            chroma = None
+            beat_frames = None
+
+            if features:
+                chroma = features.get('chroma_harm_512')
+                beat_frames = features.get('beat_frames')
+
+            # Fallback: compute HPSS and chroma if not cached
+            if chroma is None:
+                y_h = features.get('y_harm', y) if features else y
+                if y_h is y:
+                    y_h, _ = librosa.effects.hpss(y, margin=8.0)
+                chroma = librosa.feature.chroma_cqt(
+                    y=y_h, sr=sr, hop_length=512,
+                    bins_per_octave=36, n_chroma=12, norm=2
+                )
+
+            # Fallback: compute beat frames if not cached
+            if beat_frames is None:
+                y_h = features.get('y_harm', y) if features else y
+                if y_h is y:
+                    y_h, _ = librosa.effects.hpss(y, margin=8.0)
+                _, beat_frames = librosa.beat.beat_track(
+                    y=y_h, sr=sr, hop_length=512, units='frames', trim=False
+                )
+
             if beat_frames is None or len(beat_frames) < 8:
                 # fallback to median over chroma
                 c = np.median(chroma, axis=1)
@@ -596,54 +749,76 @@ class AudioAnalyzer:
         final_confidence = float(np.clip(best_confidence / (np.max(list(key_votes.values())) or 1.0), 0.0, 1.0))
         return final_key, final_mode, final_confidence
 
-    def detect_bpm_rekordbox_algorithm(self, y, sr):
-        """Industry-standard BPM detection algorithm matching Mixed In Key/Rekordbox accuracy."""
+    def detect_bpm_rekordbox_algorithm(self, y, sr, features=None):
+        """Industry-standard BPM detection algorithm matching Mixed In Key/Rekordbox accuracy.
+
+        Args:
+            y: Audio time series
+            sr: Sample rate
+            features: Optional precomputed features dict from _precompute_features()
+        """
         try:
-            # Multi-algorithm approach for maximum accuracy
-            bpm_results = []
-            
+            # Use precomputed features if available
+            if features is None:
+                features = self._features if self._features else {}
+
+            # Check if we have a precomputed tempo - use it directly if available
+            if features.get('tempo') is not None:
+                # Still run voting for accuracy, but weight precomputed tempo highly
+                precomputed_tempo = features['tempo']
+                bpm_results = [precomputed_tempo]
+            else:
+                bpm_results = []
+
             # Algorithm 1: Enhanced onset-based detection
-            bpm1 = self._detect_bpm_onset_enhanced(y, sr)
+            bpm1 = self._detect_bpm_onset_enhanced(y, sr, features)
             bpm_results.append(bpm1)
-            
+
             # Algorithm 2: Spectral-based detection
-            bpm2 = self._detect_bpm_spectral(y, sr)
+            bpm2 = self._detect_bpm_spectral(y, sr, features)
             bpm_results.append(bpm2)
-            
+
             # Algorithm 3: Harmonic-percussive BPM detection
-            bpm3 = self._detect_bpm_harmonic_percussive(y, sr)
+            bpm3 = self._detect_bpm_harmonic_percussive(y, sr, features)
             bpm_results.append(bpm3)
-            
+
             # Algorithm 4: Multi-scale autocorrelation
-            bpm4 = self._detect_bpm_autocorrelation(y, sr)
+            bpm4 = self._detect_bpm_autocorrelation(y, sr, features)
             bpm_results.append(bpm4)
-            
+
             # Weighted voting for final BPM
             final_bpm = self._weighted_bpm_voting(bpm_results)
-            
+
             return int(round(final_bpm))
-            
+
         except Exception as e:
             logger.error(f"BPM detection failed: {str(e)}")
             return 120
 
-    def _detect_bpm_onset_enhanced(self, y, sr):
-        """Enhanced onset-based BPM detection."""
-        # High-quality onset detection
-        onset_env = librosa.onset.onset_strength(
-            y=y, sr=sr,
-            hop_length=512,
-            lag=2,
-            max_size=1,
-            aggregate=np.median
-        )
-        
+    def _detect_bpm_onset_enhanced(self, y, sr, features=None):
+        """Enhanced onset-based BPM detection.
+
+        Uses precomputed onset_env_512 from features if available.
+        """
+        # Use precomputed onset envelope if available
+        onset_env = None
+        if features and features.get('onset_env_512') is not None:
+            onset_env = features['onset_env_512']
+        else:
+            onset_env = librosa.onset.onset_strength(
+                y=y, sr=sr,
+                hop_length=512,
+                lag=2,
+                max_size=1,
+                aggregate=np.median
+            )
+
         # Apply temporal filtering
         onset_filtered = ndimage.gaussian_filter1d(onset_env, sigma=1.0)
-        
+
         # Multi-scale tempo detection
         tempo_candidates = []
-        
+
         # Different prior ranges for different genres
         prior_ranges = [
             (60, 100),   # Slow/ballad
@@ -651,7 +826,7 @@ class AudioAnalyzer:
             (120, 180),  # Dance/electronic
             (140, 200)   # Fast/hardcore
         ]
-        
+
         for min_bpm, max_bpm in prior_ranges:
             try:
                 tempo = librosa.beat.tempo(
@@ -667,73 +842,90 @@ class AudioAnalyzer:
                 tempo_candidates.append(tempo)
             except:
                 continue
-        
+
         if tempo_candidates:
             # Return median of candidates
             return np.median(tempo_candidates)
         else:
             return 120.0
 
-    def _detect_bpm_spectral(self, y, sr):
-        """Spectral-based BPM detection using frequency domain analysis."""
+    def _detect_bpm_spectral(self, y, sr, features=None):
+        """Spectral-based BPM detection using frequency domain analysis.
+
+        Uses precomputed stft_mag and freq_bins from features if available.
+        """
+        # Use features parameter or fall back to instance features
+        feats = features if features else (self._features or {})
+
         # Compute/reuse spectrogram
-        if self._features and self._features.get('stft_mag') is not None:
-            magnitude = self._features['stft_mag']
+        if feats.get('stft_mag') is not None:
+            magnitude = feats['stft_mag']
         else:
             stft = librosa.stft(y, hop_length=512, n_fft=2048)
             magnitude = np.abs(stft)
-        
+
         # Focus on rhythmically important frequency bands
-        # Bass: 20-250 Hz, Kick: 50-100 Hz, Snare: 150-250 Hz
-        freq_bins = self._features.get('freq_bins') if self._features else librosa.fft_frequencies(sr=sr, n_fft=2048)
-        
+        freq_bins = feats.get('freq_bins')
+        if freq_bins is None:
+            freq_bins = librosa.fft_frequencies(sr=sr, n_fft=2048)
+
         # Extract rhythm from bass frequencies
         bass_mask = (freq_bins >= 20) & (freq_bins <= 250)
         bass_energy = np.sum(magnitude[bass_mask], axis=0)
-        
+
         # Normalize and smooth
-        if np.max(bass_energy) > 0:
-            bass_energy = bass_energy / np.max(bass_energy)
+        max_bass = np.max(bass_energy)
+        if max_bass > 0:
+            bass_energy = bass_energy / max_bass
         bass_energy = ndimage.gaussian_filter1d(bass_energy, sigma=2.0)
-        
+
         # Find periodicity using autocorrelation
         autocorr = np.correlate(bass_energy, bass_energy, mode='full')
         autocorr = autocorr[len(bass_energy)-1:]
-        
+
         # Find peaks
         peaks, properties = signal.find_peaks(
             autocorr,
             height=0.3 * np.max(autocorr),
             distance=int(sr / 512 * 0.3)  # Minimum 0.3 seconds between peaks
         )
-        
+
         if len(peaks) > 0:
             # Convert to BPM
             hop_time = 512.0 / sr
             periods = peaks * hop_time
             bpms = 60.0 / periods
-            
+
             # Filter valid range
             valid_bpms = bpms[(bpms >= 60) & (bpms <= 200)]
-            
+
             if len(valid_bpms) > 0:
                 return np.median(valid_bpms)
-        
+
         return 120.0
 
-    def _detect_bpm_harmonic_percussive(self, y, sr):
-        """BPM detection using harmonic-percussive separation."""
-        # Separate harmonic and percussive components
-        y_harmonic, y_percussive = librosa.effects.hpss(y, margin=8.0)
-        
-        # Focus on percussive component for rhythm
-        onset_env = librosa.onset.onset_strength(
-            y=y_percussive,
-            sr=sr,
-            hop_length=512,
-            aggregate=np.median
-        )
-        
+    def _detect_bpm_harmonic_percussive(self, y, sr, features=None):
+        """BPM detection using harmonic-percussive separation.
+
+        Uses precomputed y_perc and onset_env_perc_512 from features if available.
+        """
+        # Use features parameter or fall back to instance features
+        feats = features if features else (self._features or {})
+
+        # Use precomputed onset envelope on percussive if available
+        onset_env = feats.get('onset_env_perc_512')
+        if onset_env is None:
+            # Fallback: compute HPSS and onset
+            y_percussive = feats.get('y_perc')
+            if y_percussive is None:
+                _, y_percussive = librosa.effects.hpss(y, margin=8.0)
+            onset_env = librosa.onset.onset_strength(
+                y=y_percussive,
+                sr=sr,
+                hop_length=512,
+                aggregate=np.median
+            )
+
         # Enhanced tempo detection on percussive content
         tempo = librosa.beat.tempo(
             onset_envelope=onset_env,
@@ -745,24 +937,32 @@ class AudioAnalyzer:
             max_tempo=200,
             aggregate=np.median
         )[0]
-        
+
         return tempo
 
-    def _detect_bpm_autocorrelation(self, y, sr):
-        """Multi-scale autocorrelation BPM detection."""
-        # Extract onset strength with different parameters
-        onset_env = librosa.onset.onset_strength(
-            y=y, sr=sr,
-            hop_length=256,  # Higher resolution
-            lag=1,
-            max_size=3,
-            aggregate=np.mean
-        )
-        
+    def _detect_bpm_autocorrelation(self, y, sr, features=None):
+        """Multi-scale autocorrelation BPM detection.
+
+        Uses precomputed onset_env_256 from features if available.
+        """
+        # Use features parameter or fall back to instance features
+        feats = features if features else (self._features or {})
+
+        # Use precomputed onset envelope at 256 hop if available
+        onset_env = feats.get('onset_env_256')
+        if onset_env is None:
+            onset_env = librosa.onset.onset_strength(
+                y=y, sr=sr,
+                hop_length=256,  # Higher resolution
+                lag=1,
+                max_size=3,
+                aggregate=np.mean
+            )
+
         # Multi-scale autocorrelation
         scales = [1.0, 1.5, 2.0]  # Different time scales
         bpm_candidates = []
-        
+
         for scale in scales:
             # Resample onset envelope using FFT-based resampling to avoid bounds errors
             if scale != 1.0:
@@ -773,28 +973,28 @@ class AudioAnalyzer:
                     onset_scaled = onset_env
             else:
                 onset_scaled = onset_env
-            
+
             # Autocorrelation
             autocorr = np.correlate(onset_scaled, onset_scaled, mode='full')
             autocorr = autocorr[len(onset_scaled)-1:]
-            
+
             # Find peaks
             peaks, _ = signal.find_peaks(
                 autocorr,
                 height=0.2 * np.max(autocorr),
                 distance=5
             )
-            
+
             if len(peaks) > 0:
                 # Convert to BPM
                 hop_time = (256.0 / sr) * scale
                 periods = peaks * hop_time
                 bpms = 60.0 / periods
-                
+
                 # Filter and add candidates
                 valid_bpms = bpms[(bpms >= 60) & (bpms <= 200)]
                 bpm_candidates.extend(valid_bpms)
-        
+
         if bpm_candidates:
             return np.median(bpm_candidates)
         else:
@@ -2240,11 +2440,11 @@ class AudioAnalyzer:
             audio_stats = self._calculate_audio_stats(y)
 
             # Basic audio analysis
-            # Parallelize independent heavy tasks
+            # Parallelize independent heavy tasks - pass precomputed features to avoid redundant DSP
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                future_key = executor.submit(self.detect_key_rekordbox_algorithm, y, sr)
-                future_bpm = executor.submit(self.detect_bpm_rekordbox_algorithm, y, sr)
-                future_energy = executor.submit(self._analyze_energy_levels, y, sr)
+                future_key = executor.submit(self.detect_key_rekordbox_algorithm, y, sr, self._features)
+                future_bpm = executor.submit(self.detect_bpm_rekordbox_algorithm, y, sr, self._features)
+                future_energy = executor.submit(self._analyze_energy_levels, y, sr, self._features)
                 future_structure = executor.submit(self.detect_song_structure_rekordbox_algorithm, y, sr, duration)
 
                 camelot_key, mode, key_conf = future_key.result()
@@ -2399,52 +2599,141 @@ class AudioAnalyzer:
             return None
 
     def _precompute_features(self, y: np.ndarray, sr: int) -> Dict[str, np.ndarray]:
-        """Compute and cache heavy features reused by multiple algorithms."""
+        """Compute and cache heavy features reused by multiple algorithms.
+
+        This method precomputes all expensive DSP features once to avoid redundant
+        computation across key detection, BPM detection, and energy analysis.
+        """
         feats: Dict[str, np.ndarray] = {}
+
+        # ========== HPSS (Harmonic-Percussive Separation) ==========
+        # Used by: key detection (harmonic), BPM detection (percussive)
         try:
-            # HPSS once
             y_harm, y_perc = librosa.effects.hpss(y, margin=8.0)
             feats['y_harm'] = y_harm
             feats['y_perc'] = y_perc
         except Exception:
             feats['y_harm'] = y
             feats['y_perc'] = y
+
+        # ========== STFT ==========
+        # Used by: spectral BPM detection, energy analysis
         try:
-            # STFT magnitude once
             stft = librosa.stft(y, hop_length=512, n_fft=2048)
             feats['stft_mag'] = np.abs(stft)
             feats['freq_bins'] = librosa.fft_frequencies(sr=sr, n_fft=2048)
         except Exception:
             feats['stft_mag'] = None
             feats['freq_bins'] = None
+
+        # ========== Multi-Resolution Chromagrams ==========
+        # Used by: key detection (all 5 methods need different hop lengths)
+        hop_lengths = [256, 512, 1024, 2048]
+        for hop in hop_lengths:
+            try:
+                chroma = librosa.feature.chroma_cqt(
+                    y=y, sr=sr,
+                    hop_length=hop,
+                    bins_per_octave=36,
+                    n_chroma=12,
+                    norm=2
+                )
+                feats[f'chroma_{hop}'] = chroma
+            except Exception:
+                feats[f'chroma_{hop}'] = None
+
+        # ========== Harmonic Chromagram ==========
+        # Used by: HPSS key detection, beat-synchronous key detection
         try:
-            # Onset envelopes
-            feats['onset_env_256'] = librosa.onset.onset_strength(y=y, sr=sr, hop_length=256, aggregate=np.mean)
-            feats['onset_env_perc_512'] = librosa.onset.onset_strength(y=feats['y_perc'], sr=sr, hop_length=512, aggregate=np.median)
+            chroma_harm = librosa.feature.chroma_cqt(
+                y=feats['y_harm'], sr=sr,
+                hop_length=512,
+                bins_per_octave=36,
+                n_chroma=12,
+                norm=2
+            )
+            feats['chroma_harm_512'] = chroma_harm
+
+            # Also at 1024 for HPSS method
+            chroma_harm_1024 = librosa.feature.chroma_cqt(
+                y=feats['y_harm'], sr=sr,
+                hop_length=1024,
+                bins_per_octave=36,
+                n_chroma=12,
+                norm=2
+            )
+            feats['chroma_harm_1024'] = chroma_harm_1024
+        except Exception:
+            feats['chroma_harm_512'] = None
+            feats['chroma_harm_1024'] = None
+
+        # ========== Spectral Centroids (for multiresolution weighting) ==========
+        # Used by: multiresolution key detection weighting
+        for hop in hop_lengths:
+            try:
+                centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop)[0]
+                feats[f'spectral_centroid_{hop}'] = centroid
+            except Exception:
+                feats[f'spectral_centroid_{hop}'] = None
+
+        # ========== Onset Envelopes ==========
+        # Used by: BPM detection (multiple methods)
+        try:
+            feats['onset_env_256'] = librosa.onset.onset_strength(
+                y=y, sr=sr, hop_length=256, aggregate=np.mean
+            )
+            feats['onset_env_512'] = librosa.onset.onset_strength(
+                y=y, sr=sr, hop_length=512, aggregate=np.median
+            )
+            feats['onset_env_perc_512'] = librosa.onset.onset_strength(
+                y=feats['y_perc'], sr=sr, hop_length=512, aggregate=np.median
+            )
         except Exception:
             feats['onset_env_256'] = None
+            feats['onset_env_512'] = None
             feats['onset_env_perc_512'] = None
+
+        # ========== MFCC ==========
+        # Used by: structure detection, energy analysis
         try:
-            # MFCC for structure
             feats['mfcc_512'] = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=512)
         except Exception:
             feats['mfcc_512'] = None
+
+        # ========== Beat Tracking ==========
+        # Used by: beat-synchronous key detection, cue detection, energy alignment
         try:
-            # Beat tracking - compute once for all stages
-            tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=512, units='frames', trim=False)
+            tempo, beat_frames = librosa.beat.beat_track(
+                y=y, sr=sr, hop_length=512, units='frames', trim=False
+            )
             beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
             feats['beat_times'] = beat_times
+            feats['beat_frames'] = beat_frames
             feats['tempo'] = float(tempo if np.size(tempo) == 1 else tempo[0])
         except Exception:
             feats['beat_times'] = None
+            feats['beat_frames'] = None
             feats['tempo'] = None
+
+        # ========== RMS Energy ==========
+        # Used by: energy analysis, windowed key detection
         try:
-            # RMS for energy analysis
             feats['rms_512'] = librosa.feature.rms(y=y, hop_length=512)[0]
+            feats['rms_1024'] = librosa.feature.rms(y=y, hop_length=1024)[0]
         except Exception:
             feats['rms_512'] = None
+            feats['rms_1024'] = None
+
+        # ========== Tuning Estimation ==========
+        # Used by: chroma-enhanced key detection
+        try:
+            feats['tuning'] = float(librosa.estimate_tuning(y=y, sr=sr))
+        except Exception:
+            feats['tuning'] = 0.0
+
         # Store sample rate for reference
         feats['sr'] = sr
+
         return feats
 
     def _energy_profile_from_cues(self, y: np.ndarray, sr: int, bpm: float, duration: float, cue_points: List[dict]) -> List[Dict[str, float]]:
@@ -2562,15 +2851,26 @@ class AudioAnalyzer:
         except Exception:
             return {"peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None, "crest_db": None}
 
-    def _analyze_energy_levels(self, y, sr):
-        """Analyze energy levels using the energy analysis module."""
+    def _analyze_energy_levels(self, y, sr, features=None):
+        """Analyze energy levels using the energy analysis module.
+
+        Args:
+            y: Audio time series
+            sr: Sample rate
+            features: Optional precomputed features dict from _precompute_features()
+        """
         try:
             import sys
             import os
             sys.path.append(os.path.join(os.path.dirname(__file__), 'tools'))
             from energy_analysis import EnergyAnalyzer
             energy_analyzer = EnergyAnalyzer()
-            return energy_analyzer.analyze_energy_level(y, sr)
+            # Pass features to energy analyzer if it supports them
+            try:
+                return energy_analyzer.analyze_energy_level(y, sr, features=features)
+            except TypeError:
+                # Fallback if energy analyzer doesn't support features parameter
+                return energy_analyzer.analyze_energy_level(y, sr)
         except Exception as e:
             logger.warning(f"Energy analysis failed: {str(e)}")
             return {
