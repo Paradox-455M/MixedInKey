@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload, 
@@ -17,6 +17,7 @@ import {
   Volume2
 } from 'lucide-react';
 import clsx from 'clsx';
+import './theme.css';
 import './styles.css';
 import './sidebar.css';
 import HotCueCard from './HotCueCard';
@@ -25,82 +26,138 @@ import Sidebar from './Sidebar';
 import DJMixView from './DJMixView';
 import SetPlannerView from './SetPlannerView';
 import LibraryTable from './LibraryTable';
+import SettingsView from './SettingsView';
 import { buildSetPlan } from './setPlanner';
 
-// Waveform Visualization Component
-const WaveformVisualization = ({ waveformData, cuePoints, currentTime, duration, onCueClick, getCueColor }) => {
+// Waveform Visualization Component - Optimized with Path2D batching, memoization, and RAF throttling
+const WaveformVisualization = React.memo(({ waveformData, cuePoints, currentTime, duration, onCueClick, getCueColor }) => {
   const canvasRef = useRef(null);
+  const rafIdRef = useRef(null);
+  const lastDrawTimeRef = useRef(0);
+  const CANVAS_WIDTH = 800;
+  const CANVAS_HEIGHT = 120;
+
+  // Memoize the waveform path - only recalculates when waveformData changes
+  const waveformPath = useMemo(() => {
+    if (!waveformData || !waveformData.length) return null;
+
+    const path = new Path2D();
+    const barWidth = CANVAS_WIDTH / waveformData.length;
+    const maxBarHeight = CANVAS_HEIGHT * 0.8;
+
+    for (let i = 0; i < waveformData.length; i++) {
+      const amplitude = waveformData[i];
+      const barHeight = amplitude * maxBarHeight;
+      const x = i * barWidth;
+      const y = (CANVAS_HEIGHT - barHeight) / 2;
+      path.rect(x, y, Math.max(barWidth - 1, 1), barHeight);
+    }
+
+    return path;
+  }, [waveformData]);
+
+  // Store latest values in refs for RAF callback
+  const currentTimeRef = useRef(currentTime);
+  const durationRef = useRef(duration);
+  const cuePointsRef = useRef(cuePoints);
+  const getCueColorRef = useRef(getCueColor);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+    durationRef.current = duration;
+    cuePointsRef.current = cuePoints;
+    getCueColorRef.current = getCueColor;
+  }, [currentTime, duration, cuePoints, getCueColor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !waveformData.length) return;
+    if (!canvas || !waveformPath) return;
 
-    const ctx = canvas.getContext('2d');
-    const { width, height } = canvas;
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-    
-    // Draw waveform
-    const barWidth = width / waveformData.length;
-    const maxBarHeight = height * 0.8;
-    
-    ctx.fillStyle = '#8b5cf6';
-    waveformData.forEach((amplitude, index) => {
-      const barHeight = amplitude * maxBarHeight;
-      const x = index * barWidth;
-      const y = (height - barHeight) / 2;
-      
-      ctx.fillRect(x, y, Math.max(barWidth - 1, 1), barHeight);
-    });
-    
-    // Draw progress
-    if (duration > 0) {
-      const progressRatio = currentTime / duration;
-      const progressX = progressRatio * width;
-      
-      // Progress overlay
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.7)';
-      ctx.fillRect(0, 0, progressX, height);
-      
-      // Progress line
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(progressX, 0);
-      ctx.lineTo(progressX, height);
-      ctx.stroke();
+    // Cancel any pending RAF
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
     }
-    
-    // Draw cue points
-    if (cuePoints && duration > 0) {
-      cuePoints.forEach((cue) => {
-        const cueX = (cue.time / duration) * width;
-        const cueColor = getCueColor(cue);
-        
-        // Cue point line
-        ctx.strokeStyle = cueColor;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(cueX, 0);
-        ctx.lineTo(cueX, height);
-        ctx.stroke();
-        
-        // Cue point dot
-        ctx.fillStyle = cueColor;
-        ctx.beginPath();
-        ctx.arc(cueX, height / 2, 6, 0, 2 * Math.PI);
-        ctx.fill();
-        
-        // Cue point border
+
+    const drawFrame = () => {
+      const now = performance.now();
+      // Throttle to ~60fps (16.67ms between frames)
+      if (now - lastDrawTimeRef.current < 16) {
+        rafIdRef.current = requestAnimationFrame(drawFrame);
+        return;
+      }
+      lastDrawTimeRef.current = now;
+
+      const ctx = canvas.getContext('2d');
+      const { width, height } = canvas;
+      const time = currentTimeRef.current;
+      const dur = durationRef.current;
+      const cues = cuePointsRef.current;
+      const getColor = getCueColorRef.current;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw waveform with single batched fill operation
+      ctx.fillStyle = '#8b5cf6';
+      ctx.fill(waveformPath);
+
+      // Draw progress
+      if (dur > 0) {
+        const progressRatio = time / dur;
+        const progressX = progressRatio * width;
+
+        // Progress overlay
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.7)';
+        ctx.fillRect(0, 0, progressX, height);
+
+        // Progress line
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(cueX, height / 2, 6, 0, 2 * Math.PI);
+        ctx.moveTo(progressX, 0);
+        ctx.lineTo(progressX, height);
         ctx.stroke();
-      });
-    }
-  }, [waveformData, currentTime, duration, cuePoints, getCueColor]);
+      }
+
+      // Draw cue points
+      if (cues && dur > 0) {
+        cues.forEach((cue) => {
+          const cueX = (cue.time / dur) * width;
+          const cueColor = getColor(cue);
+
+          // Cue point line
+          ctx.strokeStyle = cueColor;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(cueX, 0);
+          ctx.lineTo(cueX, height);
+          ctx.stroke();
+
+          // Cue point dot
+          ctx.fillStyle = cueColor;
+          ctx.beginPath();
+          ctx.arc(cueX, height / 2, 6, 0, 2 * Math.PI);
+          ctx.fill();
+
+          // Cue point border
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(cueX, height / 2, 6, 0, 2 * Math.PI);
+          ctx.stroke();
+        });
+      }
+    };
+
+    // Schedule draw with RAF
+    rafIdRef.current = requestAnimationFrame(drawFrame);
+
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, [waveformPath, currentTime, duration, cuePoints, getCueColor]);
 
   const handleClick = (event) => {
     if (!duration || !cuePoints) return;
@@ -125,8 +182,8 @@ const WaveformVisualization = ({ waveformData, cuePoints, currentTime, duration,
     <div className="waveform-canvas-container">
       <canvas
         ref={canvasRef}
-        width={800}
-        height={120}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
         className="waveform-canvas"
         onClick={handleClick}
       />
@@ -149,7 +206,9 @@ const WaveformVisualization = ({ waveformData, cuePoints, currentTime, duration,
       )}
     </div>
   );
-};
+});
+
+WaveformVisualization.displayName = 'WaveformVisualization';
 
 const App = () => {
   const [currentView, setCurrentView] = useState('analyze'); // 'analyze' | 'set-planner' | 'library'
@@ -168,6 +227,44 @@ const App = () => {
   const [duration, setDuration] = useState(0);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(null);
   const [analyzedTracks, setAnalyzedTracks] = useState([]); // Library of analyzed tracks
+  const [analysisQuality, setAnalysisQuality] = useState('full'); // 'quick' | 'full'
+  const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
+  const localStorageSaveTimeoutRef = useRef(null);
+  const isInitialLoadRef = useRef(true);
+
+  // Load preferences from localStorage on mount
+  useEffect(() => {
+    const savedQuality = localStorage.getItem('analysisQuality');
+    if (savedQuality === 'quick' || savedQuality === 'full') {
+      setAnalysisQuality(savedQuality);
+    }
+
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      setTheme(savedTheme);
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    }
+  }, []);
+
+  // Save analysis quality preference
+  const handleSetAnalysisQuality = useCallback((quality) => {
+    setAnalysisQuality(quality);
+    localStorage.setItem('analysisQuality', quality);
+  }, []);
+
+  // Theme toggle handler
+  const handleSetTheme = useCallback((newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  }, []);
+
+  // Clear library handler
+  const handleClearLibrary = useCallback(() => {
+    setAnalyzedTracks([]);
+    localStorage.removeItem('analyzedTracks');
+    console.log('[Settings] Library cache cleared');
+  }, []);
 
   // Removed WaveSurfer initialization (no external waveform component)
 
@@ -181,10 +278,10 @@ const App = () => {
     setAnalysisProgress(null);
   };
 
-  // Store analyzed tracks in library
+  // Store analyzed tracks in library (no immediate localStorage write)
   const addToLibrary = useCallback((file, analysisResult) => {
     if (!analysisResult) return;
-    
+
     const trackEntry = {
       id: `${file.path}-${Date.now()}`,
       file,
@@ -196,39 +293,104 @@ const App = () => {
       // Check if track already exists (by path)
       const existingIndex = prev.findIndex(t => t.file.path === file.path);
       if (existingIndex >= 0) {
-        // Update existing track
+        // Update existing track, preserve metadata
         const updated = [...prev];
-        updated[existingIndex] = trackEntry;
+        const existing = prev[existingIndex];
+        updated[existingIndex] = {
+          ...trackEntry,
+          rating: existing.rating,
+          notes: existing.notes,
+          tags: existing.tags
+        };
         return updated;
       }
-      // Add new track
-      return [...prev, trackEntry];
+      // Add new track with empty metadata
+      return [...prev, { ...trackEntry, rating: 0, notes: '', tags: [] }];
     });
-
-    // Also store in localStorage for persistence
-    try {
-      const stored = JSON.parse(localStorage.getItem('analyzedTracks') || '[]');
-      const existingIndex = stored.findIndex(t => t.file.path === file.path);
-      if (existingIndex >= 0) {
-        stored[existingIndex] = trackEntry;
-      } else {
-        stored.push(trackEntry);
-      }
-      localStorage.setItem('analyzedTracks', JSON.stringify(stored));
-    } catch (e) {
-      console.error('Failed to store track in localStorage:', e);
-    }
+    // localStorage save is handled by debounced useEffect below
   }, []);
+
+  // Update track metadata (rating, notes, tags)
+  const updateTrackMetadata = useCallback((trackId, updates) => {
+    setAnalyzedTracks(prev => prev.map(track => {
+      if (track.id === trackId || track.file?.path === trackId) {
+        return { ...track, ...updates };
+      }
+      return track;
+    }));
+  }, []);
+
+  const handleUpdateRating = useCallback((trackId, rating) => {
+    updateTrackMetadata(trackId, { rating });
+  }, [updateTrackMetadata]);
+
+  const handleUpdateNotes = useCallback((trackId, notes) => {
+    updateTrackMetadata(trackId, { notes });
+  }, [updateTrackMetadata]);
+
+  const handleUpdateTags = useCallback((trackId, tags) => {
+    updateTrackMetadata(trackId, { tags });
+  }, [updateTrackMetadata]);
 
   // Load tracks from localStorage on mount
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('analyzedTracks') || '[]');
       setAnalyzedTracks(stored);
+      // Mark initial load as complete after a tick
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 0);
     } catch (e) {
       console.error('Failed to load tracks from localStorage:', e);
+      isInitialLoadRef.current = false;
     }
   }, []);
+
+  // Debounced localStorage save - batches writes with 2 second delay
+  // Reduces JSON.stringify overhead from per-track to per-batch
+  useEffect(() => {
+    // Skip saving during initial load (we just loaded from localStorage)
+    if (isInitialLoadRef.current) return;
+
+    // Clear any pending save
+    if (localStorageSaveTimeoutRef.current) {
+      clearTimeout(localStorageSaveTimeoutRef.current);
+    }
+
+    // Schedule save after 2 seconds of inactivity
+    localStorageSaveTimeoutRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem('analyzedTracks', JSON.stringify(analyzedTracks));
+        console.log(`[localStorage] Saved ${analyzedTracks.length} tracks`);
+      } catch (e) {
+        console.error('Failed to save tracks to localStorage:', e);
+      }
+    }, 2000);
+
+    // Cleanup on unmount
+    return () => {
+      if (localStorageSaveTimeoutRef.current) {
+        clearTimeout(localStorageSaveTimeoutRef.current);
+      }
+    };
+  }, [analyzedTracks]);
+
+  // Save immediately on page unload to prevent data loss
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isInitialLoadRef.current && analyzedTracks.length > 0) {
+        try {
+          localStorage.setItem('analyzedTracks', JSON.stringify(analyzedTracks));
+        } catch (e) {
+          // Ignore errors during unload
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [analyzedTracks]);
 
   const analyzeFiles = useCallback(async (files) => {
     if (!files || files.length === 0) return;
@@ -679,6 +841,10 @@ const App = () => {
                   setCurrentFiles([track.file]);
                 }}
                 currentTrack={null}
+                onUpdateRating={handleUpdateRating}
+                onUpdateNotes={handleUpdateNotes}
+                onUpdateTags={handleUpdateTags}
+                showRating={true}
               />
             </div>
           )}
@@ -688,10 +854,23 @@ const App = () => {
     
     if (currentView === 'dj-mix') {
         return (
-          <DJMixView 
+          <DJMixView
             analyzedTracks={analyzedTracks}
             onAnalyzeFile={(file) => analyzeFile(file)}
             onLoadToDeck={(track) => {}}
+          />
+        );
+    }
+
+    if (currentView === 'settings') {
+        return (
+          <SettingsView
+            analyzedTracks={analyzedTracks}
+            onClearLibrary={handleClearLibrary}
+            analysisQuality={analysisQuality}
+            onSetAnalysisQuality={handleSetAnalysisQuality}
+            theme={theme}
+            onSetTheme={handleSetTheme}
           />
         );
     }

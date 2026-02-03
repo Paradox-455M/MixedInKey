@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, Play } from 'lucide-react';
 
-export default function HotCueCard({ slot, cue, onPlay }) {
+const HotCueCard = React.memo(({ slot, cue, onPlay }) => {
   if (!cue) return null;
   const timeStr = new Date((cue.time || 0) * 1000).toISOString().substr(14, 5);
   const handlePlay = () => {
@@ -31,6 +31,8 @@ export default function HotCueCard({ slot, cue, onPlay }) {
       </div>
     </div>
   );
-}
+});
 
+HotCueCard.displayName = 'HotCueCard';
 
+export default HotCueCard;

@@ -1,0 +1,842 @@
+/* ================================================
+   MIXER PANEL - Tabbed Collapsible DJ Controls
+   ================================================ */
+
+.mixer-panel {
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.mixer-panel.collapsed {
+    /* Only show tab bar when collapsed */
+}
+
+/* ================================================
+   TAB BAR
+   ================================================ */
+.mp-tab-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #1f1f23;
+    border-bottom: 1px solid #27272a;
+}
+
+.mp-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.mp-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #71717a;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.mp-tab:hover {
+    background: #27272a;
+    color: #a1a1aa;
+}
+
+.mp-tab.active {
+    background: #8b5cf620;
+    border-color: #8b5cf6;
+    color: #c4b5fd;
+}
+
+.mp-tab.active svg {
+    color: #8b5cf6;
+}
+
+.mp-collapse-btn {
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    color: #71717a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.mp-collapse-btn:hover {
+    background: #27272a;
+    color: #e4e4e7;
+}
+
+/* ================================================
+   TAB CONTENT CONTAINER
+   ================================================ */
+.mp-content {
+    padding: 12px 16px;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ================================================
+   KNOB COMPONENT
+   ================================================ */
+.mp-knob-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.mp-knob-wrap.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.mp-knob-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: #52525b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mp-knob {
+    position: relative;
+    cursor: pointer;
+}
+
+.mp-knob-track {
+    position: absolute;
+    inset: 0;
+}
+
+.mp-knob-fill {
+    transition: stroke-dashoffset 0.05s;
+}
+
+.mp-knob-dial {
+    position: absolute;
+    inset: 4px;
+    background: linear-gradient(135deg, #2a2a2e 0%, #1a1a1e 100%);
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.mp-knob-dot {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+}
+
+.mp-knob-value {
+    font-size: 10px;
+    font-family: 'SF Mono', monospace;
+    color: #71717a;
+    min-width: 36px;
+    text-align: center;
+}
+
+/* ================================================
+   CROSSFADER
+   ================================================ */
+.mp-crossfader {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 200px;
+}
+
+.mp-cf-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+}
+
+.mp-cf-track {
+    flex: 1;
+    height: 8px;
+    background: #1f1f23;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+}
+
+.mp-cf-thumb {
+    position: absolute;
+    top: 50%;
+    width: 16px;
+    height: 20px;
+    background: linear-gradient(135deg, #3f3f46 0%, #27272a 100%);
+    border: 1px solid #52525b;
+    border-radius: 3px;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.mp-cf-thumb:active {
+    cursor: grabbing;
+}
+
+/* ================================================
+   VOLUME FADER
+   ================================================ */
+.mp-vfader {
+    width: 24px;
+}
+
+.mp-vfader-track {
+    width: 8px;
+    height: 80px;
+    background: #1f1f23;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    margin: 0 auto;
+}
+
+.mp-vfader-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 4px;
+    transition: height 0.05s;
+}
+
+.mp-vfader-thumb {
+    position: absolute;
+    left: 50%;
+    width: 20px;
+    height: 10px;
+    background: linear-gradient(135deg, #3f3f46 0%, #27272a 100%);
+    border: 1px solid #52525b;
+    border-radius: 2px;
+    transform: translate(-50%, 50%);
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* ================================================
+   VU METER
+   ================================================ */
+.mp-vu {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 2px;
+    height: 80px;
+    width: 6px;
+}
+
+.mp-vu-seg {
+    flex: 1;
+    background: #1f1f23;
+    border-radius: 1px;
+    transition: background 0.05s;
+}
+
+.mp-vu-seg.on {
+    box-shadow: 0 0 4px currentColor;
+}
+
+/* ================================================
+   KILL BUTTON
+   ================================================ */
+.mp-kill-btn {
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #52525b;
+    font-size: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+}
+
+.mp-kill-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.mp-kill-btn.active {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: white;
+}
+
+/* ================================================
+   MIXER TAB LAYOUT
+   ================================================ */
+.mp-mixer-tab {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.mp-eq-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.mp-eq-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.05em;
+}
+
+.mp-eq-knobs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mp-eq-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mp-eq-output {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.mp-mixer-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding-top: 20px;
+}
+
+.mp-master-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+}
+
+/* ================================================
+   EFFECTS TAB LAYOUT - Mixxx-style Grid
+   ================================================ */
+.mp-fx-tab {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+}
+
+.mp-fx-deck {
+    flex: 1;
+    max-width: 320px;
+}
+
+.mp-fx-deck-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+/* Effect Grid - 3 columns */
+.mp-fx-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+/* Single Effect Unit */
+.mp-effect-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    background: #1a1a1e;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.mp-effect-unit:hover {
+    border-color: #3f3f46;
+}
+
+.mp-effect-unit.active {
+    border-color: var(--fx-color, #8b5cf6);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--fx-color, #8b5cf6) 30%, transparent);
+}
+
+/* Power Button (ON/OFF Toggle) */
+.mp-fx-power {
+    width: 20px;
+    height: 20px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.mp-fx-power-dot {
+    width: 8px;
+    height: 8px;
+    background: #3f3f46;
+    border-radius: 50%;
+    transition: all 0.15s;
+}
+
+.mp-fx-power:hover {
+    border-color: #10b981;
+}
+
+.mp-fx-power:hover .mp-fx-power-dot {
+    background: #10b981;
+}
+
+.mp-fx-power.on {
+    background: #10b981;
+    border-color: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.mp-fx-power.on .mp-fx-power-dot {
+    background: white;
+}
+
+/* Effect Label */
+.mp-fx-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.05em;
+    text-align: center;
+}
+
+.mp-effect-unit.active .mp-fx-label {
+    color: var(--fx-color, #8b5cf6);
+}
+
+/* Legacy styles kept for compatibility */
+.mp-fx-unit {
+    background: #1f1f23;
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid #27272a;
+    transition: all 0.2s;
+}
+
+.mp-fx-unit.active {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+.mp-fx-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.mp-fx-header svg {
+    color: #52525b;
+}
+
+.mp-fx-header span {
+    font-size: 10px;
+    font-weight: 700;
+    color: #71717a;
+    letter-spacing: 0.05em;
+}
+
+.mp-fx-toggle {
+    margin-left: auto;
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #52525b;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.mp-fx-toggle:hover {
+    border-color: #8b5cf6;
+    color: #8b5cf6;
+}
+
+.mp-fx-toggle.on {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+}
+
+.mp-fx-controls {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.mp-filter-types {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mp-filter-type {
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #52525b;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.mp-filter-type:hover:not(:disabled) {
+    border-color: #3b82f6;
+    color: #3b82f6;
+}
+
+.mp-filter-type.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+}
+
+.mp-filter-type:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.mp-delay-sync {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.mp-sync-btn {
+    flex: 1;
+    padding: 4px 6px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #52525b;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.mp-sync-btn:hover:not(:disabled) {
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.mp-sync-btn.active {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+}
+
+.mp-sync-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 700px) {
+    .mp-fx-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ================================================
+   PERFORMANCE TAB LAYOUT
+   ================================================ */
+.mp-perf-tab {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+}
+
+.mp-perf-deck {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 200px;
+}
+
+.mp-perf-deck-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.05em;
+    text-align: center;
+}
+
+/* Loop Section */
+.mp-loop-section {
+    background: #1f1f23;
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid #27272a;
+}
+
+.mp-loop-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.mp-loop-header svg {
+    color: #52525b;
+}
+
+.mp-loop-header span {
+    font-size: 10px;
+    font-weight: 700;
+    color: #71717a;
+    letter-spacing: 0.05em;
+}
+
+.mp-loop-badge {
+    margin-left: auto;
+    padding: 2px 6px;
+    background: #8b5cf620;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #c4b5fd;
+}
+
+.mp-loop-sizes {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.mp-loop-btn {
+    flex: 1;
+    padding: 6px 4px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.mp-loop-btn:hover {
+    border-color: #8b5cf6;
+    color: #8b5cf6;
+}
+
+.mp-loop-btn.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+}
+
+.mp-loop-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.mp-loop-toggle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.mp-loop-toggle:hover:not(:disabled) {
+    border-color: #8b5cf6;
+    color: #8b5cf6;
+}
+
+.mp-loop-toggle.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+
+.mp-loop-toggle:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.mp-loop-clear {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.mp-loop-clear:hover:not(:disabled) {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.mp-loop-clear:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Hot Cues Section */
+.mp-cues-section {
+    background: #1f1f23;
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid #27272a;
+}
+
+.mp-cues-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.mp-cues-header span:first-child {
+    font-size: 10px;
+    font-weight: 700;
+    color: #71717a;
+    letter-spacing: 0.05em;
+}
+
+.mp-cues-count {
+    font-size: 9px;
+    color: #52525b;
+}
+
+.mp-cue-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.mp-cue-pad {
+    aspect-ratio: 1;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s;
+    position: relative;
+    overflow: hidden;
+}
+
+.mp-cue-pad:hover {
+    border-color: var(--pad-color);
+    background: color-mix(in srgb, var(--pad-color) 10%, #27272a);
+}
+
+.mp-cue-pad.set {
+    background: color-mix(in srgb, var(--pad-color) 20%, #27272a);
+    border-color: var(--pad-color);
+}
+
+.mp-cue-pad.set::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--pad-color);
+}
+
+.mp-cue-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #71717a;
+}
+
+.mp-cue-pad.set .mp-cue-num {
+    color: var(--pad-color);
+}
+
+.mp-cue-time {
+    font-size: 8px;
+    font-family: 'SF Mono', monospace;
+    color: #52525b;
+    margin-top: 1px;
+}
+
+/* ================================================
+   RESPONSIVE ADJUSTMENTS
+   ================================================ */
+@media (max-width: 900px) {
+    .mp-mixer-tab {
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .mp-fx-tab,
+    .mp-perf-tab {
+        flex-direction: column;
+        align-items: center;
+    }
+}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import {
     Search,
@@ -10,10 +10,15 @@ import {
     Play,
     Pause,
     Plus,
-    CheckCircle
+    CheckCircle,
+    Sparkles,
+    Star
 } from 'lucide-react';
 import './library.css';
+import './loudnessIndicator.css';
+import './trackNotes.css';
 import { getKeyColor } from './keyUtils';
+import LoudnessIndicator from './LoudnessIndicator';
 
 // Pre-computed Camelot wheel compatibility map for O(1) lookups
 const COMPATIBLE_KEYS_MAP = new Map();
@@ -39,7 +44,10 @@ const LibraryTable = ({
     onAddToSet,
     multiSelect = false,
     selectedTracks = [],
-    onToggleTrack = null
+    onToggleTrack = null,
+    onFindSimilar = null,
+    onUpdateRating = null,
+    showRating = false
 }) => {
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
     const [filterText, setFilterText] = useState('');
@@ -92,11 +100,21 @@ const LibraryTable = ({
         // Sort
         if (sortConfig.key) {
             result.sort((a, b) => {
-                let aVal = sortConfig.key === 'name' ? a.file.name : a.analysis[sortConfig.key];
-                let bVal = sortConfig.key === 'name' ? b.file.name : b.analysis[sortConfig.key];
+                let aVal, bVal;
+
+                if (sortConfig.key === 'name') {
+                    aVal = a.file.name;
+                    bVal = b.file.name;
+                } else if (sortConfig.key === 'rating') {
+                    aVal = a.rating || 0;
+                    bVal = b.rating || 0;
+                } else {
+                    aVal = a.analysis[sortConfig.key];
+                    bVal = b.analysis[sortConfig.key];
+                }
 
                 // Handle numeric values
-                if (sortConfig.key === 'bpm' || sortConfig.key === 'energy_level') {
+                if (sortConfig.key === 'bpm' || sortConfig.key === 'energy_level' || sortConfig.key === 'rating') {
                     aVal = parseFloat(aVal) || 0;
                     bVal = parseFloat(bVal) || 0;
                 }
@@ -188,9 +206,48 @@ const LibraryTable = ({
                         />
                     </div>
                 </div>
+                <div className="col-loudness">
+                    <LoudnessIndicator
+                        lufs={track.analysis.audio_stats?.lufs}
+                        gainToTarget={track.analysis.audio_stats?.gain_to_target}
+                        compact={true}
+                    />
+                </div>
+                {showRating && (
+                    <div className="col-rating">
+                        <div className="rating-stars-compact">
+                            {[1, 2, 3, 4, 5].map(star => (
+                                <Star
+                                    key={star}
+                                    size={12}
+                                    className={`star ${star <= (track.rating || 0) ? 'filled' : ''}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newRating = track.rating === star ? 0 : star;
+                                        onUpdateRating?.(track.id || track.file?.path, newRating);
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {onFindSimilar && (
+                    <div className="col-actions">
+                        <button
+                            className="find-similar-btn"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onFindSimilar(track);
+                            }}
+                            title="Find similar tracks"
+                        >
+                            <Sparkles size={14} />
+                        </button>
+                    </div>
+                )}
             </div>
         );
-    }, [processedTracks, currentTrack, multiSelect, selectedTrackPaths, onTrackSelect, onToggleTrack, isKeyCompatible]);
+    }, [processedTracks, currentTrack, multiSelect, selectedTrackPaths, onTrackSelect, onToggleTrack, isKeyCompatible, onFindSimilar, showRating, onUpdateRating]);
 
     return (
         <div className="library-container">
@@ -237,6 +294,15 @@ const LibraryTable = ({
                     <div className="col-energy header-cell" onClick={() => requestSort('energy')}>
                         Energy {getSortIcon('energy')}
                     </div>
+                    <div className="col-loudness header-cell">
+                        LUFS
+                    </div>
+                    {showRating && (
+                        <div className="col-rating header-cell" onClick={() => requestSort('rating')}>
+                            Rating {getSortIcon('rating')}
+                        </div>
+                    )}
+                    {onFindSimilar && <div className="col-actions header-cell"></div>}
                 </div>
 
                 {/* Virtualized List */}
@@ -254,4 +320,4 @@ const LibraryTable = ({
     );
 };
 
-export default LibraryTable;
+export default memo(LibraryTable);

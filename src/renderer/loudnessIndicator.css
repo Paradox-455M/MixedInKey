@@ -1,0 +1,58 @@
+.loudness-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-family: monospace;
+}
+
+.loudness-indicator.empty {
+    color: #52525b;
+    opacity: 0.5;
+}
+
+.loudness-indicator.compact {
+    gap: 2px;
+    font-size: 10px;
+}
+
+.loudness-indicator.compact svg {
+    opacity: 0.7;
+}
+
+.loudness-value {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.lufs-value {
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.lufs-unit {
+    font-size: 9px;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.loudness-adjust {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    opacity: 0.9;
+}
+
+.loudness-status {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Tooltip style for compact mode */
+.loudness-indicator.compact[title] {
+    cursor: help;
+}

@@ -1,0 +1,193 @@
+/* Loop Controls Styles */
+
+.loop-controls {
+    background: var(--bg-tertiary, #1f1f23);
+    border: 1px solid var(--border-color, #27272a);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.loop-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary, #a1a1aa);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.loop-header svg {
+    color: #10b981;
+}
+
+.loop-length-badge {
+    margin-left: auto;
+    background: #10b981;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+}
+
+/* Loop In/Out/Toggle Row */
+.loop-buttons-row {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.loop-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 10px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.loop-btn:hover:not(:disabled) {
+    background: #3f3f46;
+    color: #a1a1aa;
+}
+
+.loop-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.loop-btn.set {
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.loop-btn.loop-toggle {
+    padding: 8px 14px;
+}
+
+.loop-btn.loop-toggle.active {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+/* Size Buttons */
+.loop-size-buttons {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.loop-size-btn {
+    min-width: 28px;
+    height: 24px;
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.loop-size-btn:hover {
+    background: #3f3f46;
+    color: #a1a1aa;
+}
+
+.loop-size-btn.selected {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+
+/* Adjust Row */
+.loop-adjust-row {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+}
+
+.loop-adjust-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.loop-adjust-btn:hover:not(:disabled) {
+    background: #3f3f46;
+    color: #a1a1aa;
+}
+
+.loop-adjust-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.loop-clear-btn {
+    padding: 4px 10px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.loop-clear-btn:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.loop-clear-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Compact Layout */
+.loop-controls.compact {
+    padding: 6px;
+}
+
+.loop-controls.compact .loop-header {
+    margin-bottom: 6px;
+}
+
+.loop-controls.compact .loop-size-buttons {
+    margin-bottom: 6px;
+}
+
+.loop-controls.compact .loop-size-btn {
+    min-width: 24px;
+    height: 22px;
+    font-size: 9px;
+}

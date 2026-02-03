@@ -1,0 +1,148 @@
+/* Theme CSS Variables */
+
+:root {
+    /* Dark theme (default) */
+    --bg-primary: #0f0f23;
+    --bg-secondary: #18181b;
+    --bg-tertiary: #27272a;
+    --bg-elevated: #1a1a2e;
+
+    --text-primary: #e4e4e7;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+    --text-muted: #52525b;
+
+    --border-primary: #27272a;
+    --border-secondary: #3f3f46;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+
+    --accent-primary: #8b5cf6;
+    --accent-secondary: #a855f7;
+    --accent-hover: #7c3aed;
+
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+
+    /* Gradients */
+    --gradient-bg: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+    --gradient-accent: linear-gradient(135deg, #8b5cf6, #a855f7);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+    /* Transparency */
+    --overlay-light: rgba(255, 255, 255, 0.05);
+    --overlay-medium: rgba(255, 255, 255, 0.1);
+    --overlay-dark: rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme */
+[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f4f4f5;
+    --bg-tertiary: #e4e4e7;
+    --bg-elevated: #fafafa;
+
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-tertiary: #71717a;
+    --text-muted: #a1a1aa;
+
+    --border-primary: #e4e4e7;
+    --border-secondary: #d4d4d8;
+    --border-subtle: rgba(0, 0, 0, 0.1);
+
+    --accent-primary: #7c3aed;
+    --accent-secondary: #8b5cf6;
+    --accent-hover: #6d28d9;
+
+    /* Gradients */
+    --gradient-bg: linear-gradient(135deg, #ffffff 0%, #f4f4f5 50%, #e4e4e7 100%);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.15);
+
+    /* Transparency */
+    --overlay-light: rgba(0, 0, 0, 0.02);
+    --overlay-medium: rgba(0, 0, 0, 0.05);
+    --overlay-dark: rgba(0, 0, 0, 0.1);
+}
+
+/* Apply theme variables to body */
+body {
+    background: var(--gradient-bg);
+    color: var(--text-primary);
+}
+
+/* Common themed components */
+.themed-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+}
+
+.themed-button {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-secondary);
+}
+
+.themed-button:hover {
+    background: var(--overlay-medium);
+}
+
+.themed-input {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+}
+
+.themed-input:focus {
+    border-color: var(--accent-primary);
+}
+
+/* Theme toggle button */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+    background: var(--overlay-medium);
+    border-color: var(--border-secondary);
+}
+
+.theme-toggle-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Smooth theme transition */
+body,
+.app,
+.sidebar,
+.main-content,
+.themed-card,
+.settings-view,
+.settings-section,
+.dj-deck,
+.library-container {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}

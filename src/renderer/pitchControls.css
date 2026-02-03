@@ -1,0 +1,258 @@
+/* Pitch Controls Styles */
+
+.pitch-controls {
+    background: var(--bg-tertiary, #1f1f23);
+    border: 1px solid var(--border-color, #27272a);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pitch-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary, #a1a1aa);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.pitch-header svg {
+    color: #f59e0b;
+}
+
+/* BPM and Pitch Display */
+.pitch-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px;
+    background: #0f0f11;
+    border-radius: 4px;
+}
+
+.pitch-bpm {
+    font-size: 18px;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    color: var(--text-primary, #e4e4e7);
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.bpm-label {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--text-tertiary, #71717a);
+}
+
+.pitch-percent {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    color: var(--text-tertiary, #71717a);
+}
+
+.pitch-percent.positive {
+    color: #10b981;
+}
+
+.pitch-percent.negative {
+    color: #ef4444;
+}
+
+/* Fader Section */
+.pitch-fader-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.pitch-bend-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 24px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.1s ease;
+}
+
+.pitch-bend-btn:hover {
+    background: #3f3f46;
+    color: #a1a1aa;
+}
+
+.pitch-bend-btn.active {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: white;
+}
+
+/* Pitch Fader */
+.pitch-fader {
+    position: relative;
+    width: 40px;
+    height: 120px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.pitch-fader-track {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px;
+    height: 100%;
+    background: #27272a;
+    border-radius: 4px;
+}
+
+.pitch-fader-center {
+    position: absolute;
+    top: 50%;
+    left: -4px;
+    right: -4px;
+    height: 2px;
+    background: #f59e0b;
+    transform: translateY(-50%);
+}
+
+.pitch-fader-marks {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    margin-left: 4px;
+}
+
+.pitch-mark {
+    position: absolute;
+    transform: translateY(50%);
+    display: flex;
+    align-items: center;
+}
+
+.pitch-mark::before {
+    content: '';
+    width: 4px;
+    height: 1px;
+    background: #3f3f46;
+    margin-right: 4px;
+}
+
+.pitch-mark.center::before {
+    background: #f59e0b;
+    width: 6px;
+}
+
+.pitch-mark span {
+    font-size: 8px;
+    color: #52525b;
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+.pitch-mark.center span {
+    color: #f59e0b;
+}
+
+.pitch-fader-thumb {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    width: 28px;
+    height: 14px;
+    background: linear-gradient(145deg, #71717a, #52525b);
+    border-radius: 3px;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    transition: bottom 0.05s ease-out;
+}
+
+.pitch-fader-thumb::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 4px;
+    right: 4px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%);
+    border-radius: 1px;
+}
+
+/* Options Row */
+.pitch-options {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+}
+
+.pitch-range-btn,
+.key-lock-btn,
+.pitch-reset-btn {
+    padding: 4px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pitch-range-btn:hover,
+.key-lock-btn:hover,
+.pitch-reset-btn:hover {
+    background: #3f3f46;
+    color: #a1a1aa;
+}
+
+.key-lock-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+}
+
+.key-lock-btn.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+
+.pitch-reset-btn {
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+/* Compact Layout */
+.pitch-controls.compact {
+    padding: 6px;
+    gap: 6px;
+}
+
+.pitch-controls.compact .pitch-fader {
+    height: 100px;
+}
+
+.pitch-controls.compact .pitch-display {
+    padding: 4px;
+}
+
+.pitch-controls.compact .pitch-bpm {
+    font-size: 14px;
+}

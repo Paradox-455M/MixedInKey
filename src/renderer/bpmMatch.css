@@ -1,0 +1,81 @@
+/* BPM Match Bar - Compact Horizontal Layout */
+
+.bpm-match-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 8px;
+    padding: 10px 20px;
+    flex-shrink: 0;
+}
+
+.bpm-match-bar.empty {
+    justify-content: center;
+    padding: 12px 20px;
+}
+
+.bpm-match-hint {
+    font-size: 12px;
+    color: #52525b;
+}
+
+.bpm-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bpm-info .deck-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    text-transform: uppercase;
+}
+
+.bpm-info .bpm-value {
+    font-size: 16px;
+    font-weight: 700;
+    font-family: 'SF Mono', monospace;
+    color: var(--text-primary, #e4e4e7);
+}
+
+.match-center {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pitch-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: 'SF Mono', monospace;
+}
+
+.key-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.key-badge.compatible {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.key-badge.clash {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.key-badge span {
+    font-family: 'SF Mono', monospace;
+}

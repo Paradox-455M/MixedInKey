@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, memo } from 'react';
 import './transitionVisualizer.css';
 import WaveformCanvas from './WaveformCanvas';
 
@@ -125,4 +125,4 @@ const formatTime = (seconds) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-export default TransitionVisualizer;
+export default memo(TransitionVisualizer);

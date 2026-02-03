@@ -2,8 +2,8 @@
 
 .sidebar {
   width: 240px;
-  background: rgba(17, 24, 39, 0.95);
-  border-right: 1px solid rgba(75, 85, 99, 0.3);
+  background: var(--bg-secondary, rgba(17, 24, 39, 0.95));
+  border-right: 1px solid var(--border-primary, rgba(75, 85, 99, 0.3));
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -12,11 +12,12 @@
   top: 0;
   z-index: 100;
   backdrop-filter: blur(10px);
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .sidebar-header {
   padding: 1.5rem 1rem;
-  border-bottom: 1px solid rgba(75, 85, 99, 0.3);
+  border-bottom: 1px solid var(--border-primary, rgba(75, 85, 99, 0.3));
 }
 
 .sidebar-logo {
@@ -72,7 +73,7 @@
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
-  color: rgba(209, 213, 219, 0.8);
+  color: var(--text-secondary, rgba(209, 213, 219, 0.8));
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: left;
@@ -81,8 +82,8 @@
 }
 
 .sidebar-nav-item:hover {
-  background: rgba(55, 65, 81, 0.5);
-  color: rgba(209, 213, 219, 0.95);
+  background: var(--overlay-medium, rgba(55, 65, 81, 0.5));
+  color: var(--text-primary, rgba(209, 213, 219, 0.95));
 }
 
 .sidebar-nav-item.active {
@@ -114,12 +115,12 @@
 
 .sidebar-footer {
   padding: 1rem;
-  border-top: 1px solid rgba(75, 85, 99, 0.3);
+  border-top: 1px solid var(--border-primary, rgba(75, 85, 99, 0.3));
 }
 
 .sidebar-version {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.6);
+  color: var(--text-muted, rgba(148, 163, 184, 0.6));
   text-align: center;
 }
 

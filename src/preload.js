@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('analyze-audio-file', filePath);
   },
 
+  // Quick analysis (BPM/key only, ~5x faster)
+  analyzeAudioFileQuick: (filePath) => {
+    console.log('[PRELOAD] analyzeAudioFileQuick called with:', filePath);
+    return ipcRenderer.invoke('analyze-audio-file-quick', filePath);
+  },
+
   analyzeAudioFilesBatch: (filePaths) => {
     console.log('[PRELOAD] analyzeAudioFilesBatch called with:', filePaths.length, 'files');
     return ipcRenderer.invoke('analyze-audio-files-batch', filePaths);

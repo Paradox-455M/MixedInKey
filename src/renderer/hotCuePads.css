@@ -1,0 +1,175 @@
+/* Hot Cue Pads Styles */
+
+.hot-cue-pads {
+    background: var(--bg-tertiary, #1f1f23);
+    border: 1px solid var(--border-color, #27272a);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.hot-cue-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary, #a1a1aa);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.pad-count {
+    color: var(--text-tertiary, #71717a);
+    font-weight: 500;
+}
+
+.clear-all-btn {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.clear-all-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* Pad Grid */
+.hot-cue-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+/* Individual Pad */
+.hot-cue-pad {
+    position: relative;
+    aspect-ratio: 1.2;
+    min-height: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: #27272a;
+    border: 2px solid #3f3f46;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    overflow: hidden;
+}
+
+.hot-cue-pad:hover {
+    border-color: #52525b;
+    transform: scale(1.02);
+}
+
+.hot-cue-pad:active {
+    transform: scale(0.98);
+}
+
+/* Empty Pad */
+.hot-cue-pad.empty {
+    opacity: 0.5;
+}
+
+.hot-cue-pad.empty:hover {
+    opacity: 0.8;
+    border-color: var(--pad-color, #8b5cf6);
+}
+
+.hot-cue-pad.empty .pad-number {
+    font-size: 14px;
+    font-weight: 700;
+    color: #52525b;
+}
+
+/* Set Pad */
+.hot-cue-pad.set {
+    border-color: var(--pad-color, #8b5cf6);
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
+}
+
+.hot-cue-pad.set:hover {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--pad-color) 40%, transparent);
+}
+
+.hot-cue-pad.set .pad-number {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pad-color, #8b5cf6);
+}
+
+.hot-cue-pad.playing {
+    animation: pad-pulse 0.3s ease;
+}
+
+@keyframes pad-pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 var(--pad-color);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 20px color-mix(in srgb, var(--pad-color) 50%, transparent);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--pad-color) 30%, transparent);
+    }
+}
+
+.pad-time {
+    font-size: 8px;
+    font-weight: 500;
+    color: var(--text-tertiary, #71717a);
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+.pad-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+}
+
+/* Hint */
+.hot-cue-hint {
+    margin-top: 6px;
+    font-size: 9px;
+    color: var(--text-tertiary, #52525b);
+    text-align: center;
+}
+
+/* Compact Layout */
+.hot-cue-pads.compact .hot-cue-grid {
+    gap: 3px;
+}
+
+.hot-cue-pads.compact .hot-cue-pad {
+    min-height: 32px;
+}
+
+.hot-cue-pads.compact .pad-number {
+    font-size: 11px;
+}
+
+.hot-cue-pads.compact .pad-time {
+    font-size: 7px;
+}
+
+.hot-cue-pads.compact .hot-cue-hint {
+    display: none;
+}

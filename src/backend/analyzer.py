@@ -57,6 +57,7 @@ from typing import List, Dict, Tuple, Optional
 import time
 import subprocess
 import shutil
+import struct
 import concurrent.futures
 
 # Configure logging
@@ -92,18 +93,35 @@ class CacheManager:
         self._init_db()
 
     def _init_db(self):
-        """Initialize SQLite database with indexed table."""
+        """Initialize SQLite database with indexed table and performance optimizations."""
         try:
             self.conn = sqlite3.connect(self.cache_file, check_same_thread=False)
+
+            # Performance optimizations via PRAGMA
+            self.conn.execute('PRAGMA journal_mode=WAL')       # Write-Ahead Logging for concurrent reads
+            self.conn.execute('PRAGMA synchronous=NORMAL')     # Faster, still safe with WAL
+            self.conn.execute('PRAGMA cache_size=-64000')      # 64MB cache
+            self.conn.execute('PRAGMA temp_store=MEMORY')      # Temp tables in memory
+            self.conn.execute('PRAGMA mmap_size=268435456')    # 256MB mmap for reads
+
+            # Create table with waveform BLOB column for binary storage
             self.conn.execute('''
                 CREATE TABLE IF NOT EXISTS cache (
                     file_path TEXT PRIMARY KEY,
                     mtime REAL NOT NULL,
                     analysis TEXT NOT NULL,
+                    waveform BLOB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             self.conn.execute('CREATE INDEX IF NOT EXISTS idx_mtime ON cache(mtime)')
+
+            # Migration: add waveform column if missing (for existing caches)
+            cursor = self.conn.execute("PRAGMA table_info(cache)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'waveform' not in columns:
+                self.conn.execute('ALTER TABLE cache ADD COLUMN waveform BLOB')
+
             self.conn.commit()
         except Exception as e:
             logger.warning(f"Failed to initialize cache database: {e}")
@@ -121,7 +139,7 @@ class CacheManager:
                 return None
 
             cursor = self.conn.execute(
-                'SELECT mtime, analysis FROM cache WHERE file_path = ?',
+                'SELECT mtime, analysis, waveform FROM cache WHERE file_path = ?',
                 (abs_path,)
             )
             row = cursor.fetchone()
@@ -129,12 +147,19 @@ class CacheManager:
             if not row:
                 return None
 
-            cached_mtime, analysis_json = row
+            cached_mtime, analysis_json, waveform_blob = row
             current_mtime = os.path.getmtime(abs_path)
 
             # Validate mtime matches (file hasn't changed)
             if abs(cached_mtime - current_mtime) < 0.001:  # Float comparison
-                return json.loads(analysis_json)
+                analysis = json.loads(analysis_json)
+
+                # Reassemble waveform from binary BLOB if present
+                if waveform_blob and 'waveform_data' not in analysis:
+                    num_floats = len(waveform_blob) // 4
+                    analysis['waveform_data'] = list(struct.unpack(f'{num_floats}f', waveform_blob))
+
+                return analysis
 
             return None
         except Exception as e:
@@ -142,7 +167,7 @@ class CacheManager:
             return None
 
     def set(self, file_path, analysis):
-        """Save analysis to cache. O(1) insert/update."""
+        """Save analysis to cache. O(1) insert/update. Stores waveform as binary BLOB."""
         if self.conn is None:
             return
         try:
@@ -151,15 +176,53 @@ class CacheManager:
                 return
 
             mtime = os.path.getmtime(abs_path)
-            analysis_json = json.dumps(analysis)
+
+            # Extract waveform for separate binary BLOB storage
+            analysis_copy = analysis.copy()
+            waveform_data = analysis_copy.pop('waveform_data', None)
+            waveform_blob = None
+            if waveform_data and len(waveform_data) > 0:
+                waveform_blob = struct.pack(f'{len(waveform_data)}f', *waveform_data)
+
+            analysis_json = json.dumps(analysis_copy)
 
             self.conn.execute(
-                'INSERT OR REPLACE INTO cache (file_path, mtime, analysis) VALUES (?, ?, ?)',
-                (abs_path, mtime, analysis_json)
+                'INSERT OR REPLACE INTO cache (file_path, mtime, analysis, waveform) VALUES (?, ?, ?, ?)',
+                (abs_path, mtime, analysis_json, waveform_blob)
             )
             self.conn.commit()
         except Exception as e:
             logger.warning(f"Cache save failed for {file_path}: {e}")
+
+    def set_many(self, items: List[Tuple[str, dict]]):
+        """Batch insert/update multiple cache entries. Single commit at end for efficiency."""
+        if self.conn is None:
+            return
+        try:
+            for file_path, analysis in items:
+                abs_path = os.path.abspath(file_path)
+                if not os.path.exists(abs_path):
+                    continue
+
+                mtime = os.path.getmtime(abs_path)
+
+                # Extract waveform for separate binary BLOB storage
+                analysis_copy = analysis.copy()
+                waveform_data = analysis_copy.pop('waveform_data', None)
+                waveform_blob = None
+                if waveform_data and len(waveform_data) > 0:
+                    waveform_blob = struct.pack(f'{len(waveform_data)}f', *waveform_data)
+
+                analysis_json = json.dumps(analysis_copy)
+
+                self.conn.execute(
+                    'INSERT OR REPLACE INTO cache (file_path, mtime, analysis, waveform) VALUES (?, ?, ?, ?)',
+                    (abs_path, mtime, analysis_json, waveform_blob)
+                )
+
+            self.conn.commit()  # Single commit for entire batch
+        except Exception as e:
+            logger.warning(f"Batch cache save failed: {e}")
 
     def clear(self):
         """Clear all cached entries."""
@@ -1193,6 +1256,270 @@ class AudioAnalyzer:
             bpm = float(tempo if np.size(tempo) == 1 else tempo[0])
 
         return bpm, beats, onset_env, onset_times
+
+    def _detect_downbeats(self, y: np.ndarray, sr: int, beats: np.ndarray, bpm: float) -> Tuple[np.ndarray, int]:
+        """
+        Detect downbeats (first beat of each bar) using bass flux analysis.
+        Analyzes spectral flux in bass frequencies to find the actual bar starts.
+
+        Returns:
+            Tuple of (downbeat_times, phase_offset)
+        """
+        if beats is None or len(beats) < 4:
+            return np.array([]), 0
+
+        hop = 512
+        # Compute spectral flux for low frequencies (bass emphasis for downbeat detection)
+        stft = librosa.stft(y, hop_length=hop, n_fft=2048)
+        mag = np.abs(stft)
+        freq_bins = librosa.fft_frequencies(sr=sr, n_fft=2048)
+
+        # Focus on bass frequencies (20-200 Hz) for kick detection
+        bass_mask = (freq_bins >= 20) & (freq_bins <= 200)
+        bass_diff = np.maximum(np.diff(mag[bass_mask, :], axis=1), 0)
+        bass_flux = np.sum(bass_diff, axis=0)
+        bass_flux = ndimage.gaussian_filter1d(bass_flux, sigma=1.5)
+
+        # For each potential 4-beat offset (0, 1, 2, 3), compute average bass energy
+        beat_frames = librosa.time_to_frames(beats, sr=sr, hop_length=hop)
+        scores = []
+
+        for offset in range(4):
+            # Get every 4th beat starting at this offset
+            indices = np.arange(offset, len(beat_frames), 4)
+            valid_frames = beat_frames[indices]
+            valid_frames = valid_frames[(valid_frames >= 0) & (valid_frames < len(bass_flux))]
+
+            if len(valid_frames) > 0:
+                avg_flux = np.mean(bass_flux[valid_frames])
+                scores.append((offset, avg_flux))
+
+        # Best offset has highest average bass flux (strongest kicks on downbeats)
+        best_offset = max(scores, key=lambda x: x[1])[0] if scores else 0
+
+        # Extract downbeats (every 4th beat from best offset)
+        downbeat_indices = np.arange(best_offset, len(beats), 4)
+        downbeats = beats[downbeat_indices]
+
+        return downbeats, best_offset
+
+    def _detect_phrase_boundaries(
+        self,
+        y: np.ndarray,
+        sr: int,
+        downbeats: np.ndarray,
+        bpm: float,
+        duration: float
+    ) -> List[Dict]:
+        """
+        Detect phrase boundaries at 8, 16, and 32 bar intervals using spectral novelty.
+        Uses MFCC-based novelty to validate phrase boundaries.
+
+        Returns:
+            List of phrase markers with time, bar_length, and confidence
+        """
+        if len(downbeats) < 8:
+            return []
+
+        hop = 512
+
+        # Compute spectral novelty function using MFCC delta
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=hop)
+        mfcc_delta = np.sum(np.abs(np.diff(mfcc, axis=1)), axis=0)
+        mfcc_delta = ndimage.gaussian_filter1d(mfcc_delta, sigma=3.0)
+
+        # Normalize
+        if np.max(mfcc_delta) > 0:
+            mfcc_delta = mfcc_delta / np.max(mfcc_delta)
+
+        frame_times = librosa.frames_to_time(np.arange(len(mfcc_delta)), sr=sr, hop_length=hop)
+
+        phrases = []
+        bar_lengths = [8, 16, 32]
+
+        for bar_len in bar_lengths:
+            # Every bar_len bars is a potential phrase boundary
+            for i in range(bar_len, len(downbeats), bar_len):
+                if i >= len(downbeats):
+                    break
+
+                t = downbeats[i]
+
+                # Skip if too close to start or end
+                if t < 5.0 or t > duration - 10.0:
+                    continue
+
+                # Find novelty at this point
+                frame_idx = np.argmin(np.abs(frame_times - t))
+
+                # Average novelty in a small window around the boundary
+                window = 5
+                start_idx = max(0, frame_idx - window)
+                end_idx = min(len(mfcc_delta), frame_idx + window)
+                novelty_score = float(np.mean(mfcc_delta[start_idx:end_idx]))
+
+                # Threshold: higher for longer phrases (they should be more prominent)
+                threshold = 0.25 + (bar_len / 150)  # 0.30 for 8-bar, 0.36 for 16-bar, 0.46 for 32-bar
+
+                if novelty_score > threshold:
+                    phrases.append({
+                        "time": float(t),
+                        "bar_length": bar_len,
+                        "confidence": float(min(novelty_score * 1.3, 1.0)),
+                        "type": f"phrase_{bar_len}bar",
+                        "name": f"{bar_len}-Bar",
+                        "downbeat_index": i,
+                        "spectral_novelty": float(novelty_score)
+                    })
+
+        # Remove duplicates (prefer longer phrases at same position)
+        phrases.sort(key=lambda p: (p["time"], -p["bar_length"]))
+
+        deduped = []
+        for p in phrases:
+            if not deduped or abs(p["time"] - deduped[-1]["time"]) > 2.0:
+                deduped.append(p)
+            elif p["bar_length"] > deduped[-1]["bar_length"]:
+                deduped[-1] = p
+
+        # Sort by time
+        deduped.sort(key=lambda p: p["time"])
+
+        return deduped
+
+    def _detect_loops(
+        self,
+        y: np.ndarray,
+        sr: int,
+        downbeats: np.ndarray,
+        bpm: float,
+        duration: float
+    ) -> List[Dict]:
+        """
+        Detect potential loop points using spectral self-similarity.
+        Finds sections that repeat well when looped (4, 8, 16, 32 bars).
+
+        Returns list of loop markers with:
+            - start_time: Loop start in seconds
+            - end_time: Loop end in seconds
+            - bar_length: Number of bars (4, 8, 16, 32)
+            - confidence: How well the section loops (0-1)
+        """
+        loops = []
+
+        if len(downbeats) < 8 or bpm <= 0:
+            return loops
+
+        try:
+            # Calculate duration per bar
+            seconds_per_beat = 60.0 / bpm
+            seconds_per_bar = seconds_per_beat * 4
+
+            # Compute MFCCs for spectral similarity
+            hop_length = 512
+            n_mfcc = 13
+            mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc, hop_length=hop_length)
+            times = librosa.times_like(mfccs, sr=sr, hop_length=hop_length)
+
+            def get_mfcc_segment(start_time, end_time):
+                """Extract MFCC features for a time segment."""
+                start_idx = np.searchsorted(times, start_time)
+                end_idx = np.searchsorted(times, end_time)
+                if end_idx <= start_idx:
+                    return None
+                return mfccs[:, start_idx:end_idx]
+
+            def compute_loop_score(segment_mfcc):
+                """Score how well a segment loops (first half vs second half similarity)."""
+                if segment_mfcc is None or segment_mfcc.shape[1] < 4:
+                    return 0.0
+                mid = segment_mfcc.shape[1] // 2
+                first_half = segment_mfcc[:, :mid]
+                second_half = segment_mfcc[:, mid:mid*2]
+
+                # Ensure same length
+                min_len = min(first_half.shape[1], second_half.shape[1])
+                if min_len < 2:
+                    return 0.0
+
+                first_half = first_half[:, :min_len]
+                second_half = second_half[:, :min_len]
+
+                # Cosine similarity between halves
+                first_norm = np.linalg.norm(first_half, axis=0, keepdims=True)
+                second_norm = np.linalg.norm(second_half, axis=0, keepdims=True)
+
+                # Avoid division by zero
+                first_norm = np.where(first_norm == 0, 1, first_norm)
+                second_norm = np.where(second_norm == 0, 1, second_norm)
+
+                first_normalized = first_half / first_norm
+                second_normalized = second_half / second_norm
+
+                similarity = np.mean(np.sum(first_normalized * second_normalized, axis=0))
+                return float(max(0, min(1, similarity)))
+
+            # Check loop points at various bar lengths
+            bar_lengths = [4, 8, 16, 32]
+            candidates = []
+
+            for bar_len in bar_lengths:
+                loop_duration = bar_len * seconds_per_bar
+
+                # Check loops starting at each downbeat
+                for i, start_time in enumerate(downbeats):
+                    end_time = start_time + loop_duration
+
+                    # Skip if loop extends beyond track
+                    if end_time > duration - 1:
+                        continue
+
+                    # Skip very short loops at beginning or end
+                    if start_time < 2 or end_time > duration - 2:
+                        continue
+
+                    # Get spectral features for this segment
+                    segment_mfcc = get_mfcc_segment(start_time, end_time)
+                    loop_score = compute_loop_score(segment_mfcc)
+
+                    # Threshold based on bar length (longer = stricter)
+                    threshold = 0.6 + (bar_len / 100)  # 0.64 for 4-bar, 0.68 for 8-bar, etc.
+
+                    if loop_score > threshold:
+                        candidates.append({
+                            "start_time": float(start_time),
+                            "end_time": float(end_time),
+                            "bar_length": bar_len,
+                            "confidence": float(loop_score),
+                            "type": "loop",
+                            "name": f"{bar_len}-Bar Loop"
+                        })
+
+            # Remove overlapping loops, prefer longer bars with higher confidence
+            candidates.sort(key=lambda l: (-l["bar_length"], -l["confidence"]))
+
+            for candidate in candidates:
+                # Check if overlaps with existing loops
+                overlaps = False
+                for existing in loops:
+                    # Check for overlap
+                    if (candidate["start_time"] < existing["end_time"] and
+                        candidate["end_time"] > existing["start_time"]):
+                        overlaps = True
+                        break
+
+                if not overlaps:
+                    loops.append(candidate)
+
+            # Sort by start time
+            loops.sort(key=lambda l: l["start_time"])
+
+            # Limit to top 8 loops
+            return loops[:8]
+
+        except Exception as e:
+            logger.warning(f"Loop detection failed: {e}")
+            return []
 
     def _detect_cues_aligned(
         self,
@@ -2400,6 +2727,53 @@ class AudioAnalyzer:
                 {'type': 'outro', 'start': float(max(0.0, duration - 30.0)), 'end': float(duration), 'duration': float(min(30.0, duration))}
             ]
 
+    def analyze_quick(self, file_path):
+        """
+        Quick analysis for library browsing - BPM, key, and waveform only.
+        ~5x faster than full analysis by skipping cue detection, energy analysis, and pipeline stages.
+        """
+        try:
+            start_time = time.time()
+
+            # Load audio
+            y, sr, duration = self.load_audio(file_path)
+
+            # Generate waveform data for visualization
+            waveform_data = self._generate_waveform_data(y, sr)
+
+            # Detect key and BPM in parallel (the essentials for library browsing)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                future_key = executor.submit(self.detect_key_rekordbox_algorithm, y, sr, None)
+                future_bpm = executor.submit(self.detect_bpm_rekordbox_algorithm, y, sr, None)
+
+                camelot_key, mode, key_conf = future_key.result()
+                bpm = int(round(future_bpm.result()))
+
+            elapsed = time.time() - start_time
+            logger.info(f"Quick analysis completed in {elapsed:.2f}s")
+
+            return {
+                'file_path': file_path,
+                'duration': duration,
+                'sample_rate': sr,
+                'waveform_data': waveform_data,
+                'key': camelot_key,
+                'key_mode': mode,
+                'key_confidence': float(key_conf),
+                'bpm': bpm,
+                'quick_mode': True,
+                'analysis_ms': int(elapsed * 1000),
+                'analysis_timestamp': time.time()
+            }
+
+        except Exception as e:
+            logger.error(f"Quick analysis failed: {str(e)}")
+            return {
+                'error': str(e),
+                'file_path': file_path,
+                'quick_mode': True
+            }
+
     def analyze_audio(self, file_path):
         """Main analysis function that processes audio and returns comprehensive results."""
         try:
@@ -2437,7 +2811,7 @@ class AudioAnalyzer:
 
             # Generate waveform data for visualization
             waveform_data = self._generate_waveform_data(y, sr)
-            audio_stats = self._calculate_audio_stats(y)
+            audio_stats = self._calculate_audio_stats(y, sr)
 
             # Basic audio analysis
             # Parallelize independent heavy tasks - pass precomputed features to avoid redundant DSP
@@ -2455,6 +2829,26 @@ class AudioAnalyzer:
 
             # Determine genre and cue detection parameters
             genre, cue_params = self.detect_genre_and_params(bpm, energy_analysis, y, sr)
+
+            # --- Phrase Detection (8/16/32 bars) ---
+            # Use beat grid from pipeline or compute from features
+            beats = np.array(pipeline_result.get("beatgrid", []))
+            if len(beats) < 4 and self._features and 'beat_times' in self._features:
+                beats = np.array(self._features.get('beat_times', []))
+
+            # Detect downbeats, phrase boundaries, and loops
+            downbeats = np.array([])
+            phrase_markers = []
+            loop_markers = []
+            if len(beats) >= 8 and bpm > 0:
+                try:
+                    downbeats, phase_offset = self._detect_downbeats(y, sr, beats, float(bpm))
+                    phrase_markers = self._detect_phrase_boundaries(y, sr, downbeats, float(bpm), duration)
+                    loop_markers = self._detect_loops(y, sr, downbeats, float(bpm), duration)
+                    logger.info(f"Detected {len(downbeats)} downbeats, {len(phrase_markers)} phrase markers, {len(loop_markers)} loops")
+                except Exception as e:
+                    logger.warning(f"Phrase/loop detection failed: {e}")
+
             # If pipeline already found intro/outro, prefer them
             pipeline_intro = any((str(c.get("type", "")).lower() == "intro") for c in pipeline_result.get("cues", []))
             pipeline_outro = any((str(c.get("type", "")).lower() == "outro") for c in pipeline_result.get("cues", []))
@@ -2508,6 +2902,9 @@ class AudioAnalyzer:
                 'cue_detection_params': cue_params,
                 'harmonic_mixing': harmonic_mixing,
                 'advanced_mixing': advanced_mixing,
+                'phrase_markers': phrase_markers,
+                'loop_markers': loop_markers,
+                'downbeats': downbeats.tolist() if hasattr(downbeats, 'tolist') else list(downbeats),
                 'analysis_timestamp': time.time()
             }
 
@@ -2822,11 +3219,14 @@ class AudioAnalyzer:
         except Exception as e:
             return []
 
-    def _calculate_audio_stats(self, y: np.ndarray) -> Dict[str, float]:
-        """Compute simple peak/RMS stats for headroom checks."""
+    def _calculate_audio_stats(self, y: np.ndarray, sr: int = 22050) -> Dict[str, float]:
+        """Compute peak/RMS/LUFS stats for headroom and gain matching."""
         try:
             if y.size == 0:
-                return {"peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None, "crest_db": None}
+                return {
+                    "peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None,
+                    "crest_db": None, "lufs": None, "gain_to_target": None
+                }
             peak = float(np.max(np.abs(y)))
             rms = float(np.sqrt(np.mean(np.square(y))))
 
@@ -2841,15 +3241,45 @@ class AudioAnalyzer:
             if peak_dbfs is not None and rms_dbfs is not None:
                 crest_db = peak_dbfs - rms_dbfs
 
+            # Calculate integrated loudness (LUFS) using pyloudnorm
+            lufs = None
+            gain_to_target = None
+            TARGET_LUFS = -14.0  # Standard streaming/DJ target
+            try:
+                import pyloudnorm as pyln
+                meter = pyln.Meter(sr)
+                # pyloudnorm expects shape (samples,) or (samples, channels)
+                if y.ndim == 1:
+                    lufs = meter.integrated_loudness(y)
+                else:
+                    lufs = meter.integrated_loudness(y.T)
+
+                if lufs is not None and not np.isinf(lufs) and not np.isnan(lufs):
+                    lufs = round(float(lufs), 1)
+                    # Calculate gain adjustment needed to reach target LUFS
+                    gain_to_target = round(TARGET_LUFS - lufs, 1)
+                else:
+                    lufs = None
+            except ImportError:
+                logger.debug("pyloudnorm not installed, skipping LUFS calculation")
+            except Exception as e:
+                logger.debug(f"LUFS calculation failed: {e}")
+
             return {
                 "peak": peak,
                 "rms": rms,
                 "peak_dbfs": None if peak_dbfs is None else round(peak_dbfs, 2),
                 "rms_dbfs": None if rms_dbfs is None else round(rms_dbfs, 2),
                 "crest_db": None if crest_db is None else round(crest_db, 2),
+                "lufs": lufs,
+                "gain_to_target": gain_to_target,
+                "target_lufs": TARGET_LUFS
             }
         except Exception:
-            return {"peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None, "crest_db": None}
+            return {
+                "peak": 0.0, "rms": 0.0, "peak_dbfs": None, "rms_dbfs": None,
+                "crest_db": None, "lufs": None, "gain_to_target": None
+            }
 
     def _analyze_energy_levels(self, y, sr, features=None):
         """Analyze energy levels using the energy analysis module.
@@ -3045,25 +3475,36 @@ class AudioAnalyzer:
 
 def main():
     """Main entry point for command line usage."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Mixed In AI Audio Analyzer')
+    parser.add_argument('file_path', help='Path to the audio file to analyze')
+    parser.add_argument('--quick', action='store_true',
+                        help='Quick mode: BPM/key only, ~5x faster (skips cue detection)')
+
+    args = parser.parse_args()
+
     logger.info("Starting audio analyzer...")
-    
-    if len(sys.argv) != 2:
-        logger.error("Usage: python analyzer.py <audio_file_path>")
-        print("Usage: python analyzer.py <audio_file_path>")
+    logger.info(f"Processing file: {args.file_path}")
+    logger.info(f"Quick mode: {args.quick}")
+
+    if not os.path.exists(args.file_path):
+        logger.error(f"File does not exist: {args.file_path}")
+        print(json.dumps({
+            'error': 'FILE_NOT_FOUND',
+            'message': f'File {args.file_path} does not exist'
+        }))
         sys.exit(1)
-    
-    file_path = sys.argv[1]
-    logger.info(f"Processing file: {file_path}")
-    
-    if not os.path.exists(file_path):
-        logger.error(f"File does not exist: {file_path}")
-        print(f"Error: File {file_path} does not exist")
-        sys.exit(1)
-    
+
     try:
         logger.info("Initializing AudioAnalyzer...")
         analyzer = AudioAnalyzer()
-        analysis = analyzer.analyze_audio(file_path)
+
+        if args.quick:
+            analysis = analyzer.analyze_quick(args.file_path)
+        else:
+            analysis = analyzer.analyze_audio(args.file_path)
+
         if not analysis:
             logger.error("Analysis failed to produce a result")
             print(json.dumps({
@@ -3071,14 +3512,18 @@ def main():
                 'message': 'Failed to decode or analyze audio file.'
             }))
             sys.exit(2)
+
         # Output JSON result
         logger.info("Outputting JSON result...")
         print(json.dumps(analysis, indent=2))
         logger.info("Analysis completed successfully")
-        
+
     except Exception as e:
         logger.error(f"Analysis failed: {str(e)}")
-        print(f"Error: {str(e)}", file=sys.stderr)
+        print(json.dumps({
+            'error': 'ANALYSIS_EXCEPTION',
+            'message': str(e)
+        }))
         sys.exit(1)
 
 if __name__ == "__main__":

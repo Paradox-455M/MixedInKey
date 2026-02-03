@@ -5,6 +5,117 @@ const fs = require('fs');
 
 let mainWindow;
 
+// Cached Python interpreter path to avoid re-detection overhead (200-500ms per call)
+let cachedPythonPath = null;
+let cachedVenvBinPath = null;
+
+/**
+ * Resolves and caches the Python interpreter path.
+ * First call detects a working Python with required packages.
+ * Subsequent calls return the cached path instantly.
+ */
+function getPythonInterpreter() {
+  // Return cached path if available
+  if (cachedPythonPath) {
+    return { pythonPath: cachedPythonPath, venvBinPath: cachedVenvBinPath };
+  }
+
+  const envOverride = process.env.MIXEDIN_PYTHON && String(process.env.MIXEDIN_PYTHON).trim();
+  const systemCandidates = process.platform === 'win32'
+    ? ['python', 'python3']
+    : ['/usr/bin/python3', 'python3', 'python'];
+  const venvCandidates = process.platform === 'win32'
+    ? [
+      path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe'),
+      path.join(__dirname, '..', 'venv', 'Scripts', 'python3.exe')
+    ]
+    : [
+      path.join(__dirname, '..', 'venv', 'bin', 'python3'),
+      path.join(__dirname, '..', 'venv', 'bin', 'python')
+    ];
+
+  const candidates = [envOverride, ...systemCandidates, ...venvCandidates].filter((p) => !!p);
+
+  function getRequirementsPath() {
+    const devReq = path.join(__dirname, '..', 'requirements.txt');
+    if (fs.existsSync(devReq)) return devReq;
+    const packaged = process.resourcesPath ? path.join(process.resourcesPath, 'requirements.txt') : null;
+    if (packaged && fs.existsSync(packaged)) return packaged;
+    return null;
+  }
+
+  function preflightPython(p) {
+    try {
+      const script = 'import os; os.environ.setdefault("OPENBLAS_NUM_THREADS","1"); os.environ.setdefault("OMP_NUM_THREADS","1"); import numpy as _np; import soundfile as _sf; import librosa as _lb; print("ok")';
+      const res = spawnSync(p, ['-c', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+      if (res && res.status === 0 && String(res.stdout || '').toString().includes('ok')) {
+        return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
+  }
+
+  function attemptInstallDependencies(p) {
+    const reqPath = getRequirementsPath();
+    if (!reqPath) return false;
+    try {
+      console.log(`📦 [MAIN] Installing Python deps with ${p} -m pip install -r ${reqPath}`);
+      const install = spawnSync(p, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', reqPath], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      console.log(`📦 [MAIN] pip install status: ${install.status}`);
+      if (install.status === 0) {
+        return preflightPython(p);
+      }
+    } catch (e) {
+      console.log('❌ [MAIN] pip install attempt failed:', e.message);
+    }
+    return false;
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const exists = candidate.includes(path.sep) ? fs.existsSync(candidate) : true;
+    if (!exists) continue;
+    if (preflightPython(candidate) || attemptInstallDependencies(candidate)) {
+      cachedPythonPath = candidate;
+      if (candidate.includes(`${path.sep}venv${path.sep}`)) {
+        cachedVenvBinPath = path.dirname(candidate);
+      }
+      console.log(`🐍 [MAIN] Cached Python interpreter: ${cachedPythonPath}`);
+      break;
+    }
+  }
+
+  if (!cachedPythonPath) {
+    throw new Error('No working Python interpreter found. Please ensure Python 3 and required packages are installed, or include the project venv.');
+  }
+
+  return { pythonPath: cachedPythonPath, venvBinPath: cachedVenvBinPath };
+}
+
+/**
+ * Resolves the analyzer script path (handles both dev and packaged app).
+ */
+function getAnalyzerScriptPath() {
+  let scriptPath = path.join(__dirname, 'backend/analyzer.py');
+  if (!fs.existsSync(scriptPath)) {
+    const alt1 = path.join(process.resourcesPath || '', 'backend', 'analyzer.py');
+    if (fs.existsSync(alt1)) {
+      scriptPath = alt1;
+    } else {
+      const alt2 = path.join(__dirname, '..', 'src', 'backend', 'analyzer.py');
+      if (fs.existsSync(alt2)) scriptPath = alt2;
+    }
+  }
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error(`Analyzer script not found: ${scriptPath}`);
+  }
+  return scriptPath;
+}
+
 function escapeXml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -122,107 +233,12 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
       throw new Error(`File does not exist: ${filePath}`);
     }
 
-    // Resolve Python interpreter with preflight import check (prefer a working system Python)
-    const envOverride = process.env.MIXEDIN_PYTHON && String(process.env.MIXEDIN_PYTHON).trim();
-    const systemCandidates = process.platform === 'win32'
-      ? ['python', 'python3']
-      : ['/usr/bin/python3', 'python3', 'python'];
-    const venvCandidates = process.platform === 'win32'
-      ? [
-        path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe'),
-        path.join(__dirname, '..', 'venv', 'Scripts', 'python3.exe')
-      ]
-      : [
-        path.join(__dirname, '..', 'venv', 'bin', 'python3'),
-        path.join(__dirname, '..', 'venv', 'bin', 'python')
-      ];
-
-    const candidates = [envOverride, ...systemCandidates, ...venvCandidates].filter((p) => !!p);
-
-    function getRequirementsPath() {
-      // In dev tree
-      const devReq = path.join(__dirname, '..', 'requirements.txt');
-      if (fs.existsSync(devReq)) return devReq;
-      // In packaged app resources
-      const packaged = process.resourcesPath ? path.join(process.resourcesPath, 'requirements.txt') : null;
-      if (packaged && fs.existsSync(packaged)) return packaged;
-      return null;
-    }
-
-    function preflightPython(p) {
-      try {
-        const script = 'import os; os.environ.setdefault("OPENBLAS_NUM_THREADS","1"); os.environ.setdefault("OMP_NUM_THREADS","1"); import numpy as _np; import soundfile as _sf; import librosa as _lb; print("ok")';
-        const res = spawnSync(p, ['-c', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-        if (res && res.status === 0 && String(res.stdout || '').toString().includes('ok')) {
-          return true;
-        }
-      } catch (e) {
-        // ignore
-      }
-      return false;
-    }
-
-    function attemptInstallDependencies(p) {
-      const reqPath = getRequirementsPath();
-      if (!reqPath) return false;
-      try {
-        console.log(`📦 [MAIN] Installing Python deps with ${p} -m pip install -r ${reqPath}`);
-        const install = spawnSync(p, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', reqPath], {
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-        console.log(`📦 [MAIN] pip install status: ${install.status}`);
-        if (install.status === 0) {
-          // Re-test imports
-          return preflightPython(p);
-        }
-      } catch (e) {
-        console.log('❌ [MAIN] pip install attempt failed:', e.message);
-      }
-      return false;
-    }
-
-    let pythonPath = null;
-    let venvBinPath = null;
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      const exists = candidate.includes(path.sep) ? fs.existsSync(candidate) : true;
-      if (!exists) continue;
-      if (preflightPython(candidate) || attemptInstallDependencies(candidate)) {
-        pythonPath = candidate;
-        if (candidate.includes(`${path.sep}venv${path.sep}`)) {
-          venvBinPath = path.dirname(candidate);
-        }
-        break;
-      }
-    }
-
-    if (pythonPath) {
-      console.log(`🐍 [MAIN] Using Python at: ${pythonPath}`);
-    } else {
-      console.log('❌ [MAIN] No working Python interpreter found for imports.');
-      throw new Error('No working Python interpreter found. Please ensure Python 3 and required packages are installed, or include the project venv.');
-    }
-
-    // Support both packaged extraResources and dev tree
-    let scriptPath = path.join(__dirname, 'backend/analyzer.py');
-    if (!fs.existsSync(scriptPath)) {
-      // When packaged, backend is copied next to app.asar under resources
-      const alt1 = path.join(process.resourcesPath || '', 'backend', 'analyzer.py');
-      if (fs.existsSync(alt1)) {
-        scriptPath = alt1;
-      } else {
-        // Fallback to project root layout during dev
-        const alt2 = path.join(__dirname, '..', 'src', 'backend', 'analyzer.py');
-        if (fs.existsSync(alt2)) scriptPath = alt2;
-      }
-    }
+    // Use cached Python interpreter (avoids 200-500ms detection overhead per call)
+    const { pythonPath, venvBinPath } = getPythonInterpreter();
+    const scriptPath = getAnalyzerScriptPath();
     console.log(`📜 [MAIN] Script path: ${scriptPath}`);
+    console.log(`🐍 [MAIN] Using Python at: ${pythonPath}`);
 
-    // Check if script exists
-    if (!fs.existsSync(scriptPath)) {
-      console.log(`❌ [MAIN] Script does not exist: ${scriptPath}`);
-      throw new Error(`Analyzer script not found: ${scriptPath}`);
-    }
 
     return new Promise((resolve, reject) => {
       console.log(`🚀 [MAIN] Spawning Python process with args: [${scriptPath}, ${filePath}]`);
@@ -313,6 +329,92 @@ ipcMain.handle('analyze-audio-file', async (event, filePath) => {
   }
 });
 
+// Handle quick file analysis (BPM/key only, ~5x faster)
+ipcMain.handle('analyze-audio-file-quick', async (event, filePath) => {
+  console.log(`⚡ [MAIN] Starting QUICK analysis for file: ${filePath}`);
+
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.log(`❌ [MAIN] File does not exist: ${filePath}`);
+      throw new Error(`File does not exist: ${filePath}`);
+    }
+
+    // Use cached Python interpreter (avoids 200-500ms detection overhead per call)
+    const { pythonPath, venvBinPath } = getPythonInterpreter();
+    const scriptPath = getAnalyzerScriptPath();
+
+    return new Promise((resolve, reject) => {
+      console.log(`⚡ [MAIN] Spawning Python process with --quick flag`);
+      const envPath = venvBinPath ? `${venvBinPath}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH || ''}` : process.env.PATH;
+
+      // Add --quick flag for fast BPM/key only analysis
+      const pythonProcess = spawn(pythonPath, [scriptPath, filePath, '--quick'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          PATH: envPath,
+          VIRTUAL_ENV: venvBinPath ? path.join(__dirname, '..', 'venv') : process.env.VIRTUAL_ENV,
+          PYTHONUNBUFFERED: '1',
+          PYTHONIOENCODING: 'utf-8',
+          NUMBA_NUM_THREADS: '1',
+          NUMBA_CACHE_DIR: path.join(app.getPath('userData') || __dirname, 'numba_cache')
+        }
+      });
+
+      const resultChunks = [];
+      const errorChunks = [];
+
+      pythonProcess.stdout.on('data', (data) => {
+        resultChunks.push(data);
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        errorChunks.push(data);
+        if (process.env.DEBUG) {
+          console.log(`⚡ [PYTHON STDERR] ${data.toString().trim()}`);
+        }
+      });
+
+      // Shorter timeout for quick analysis (30 seconds)
+      const timeoutMs = Number(process.env.QUICK_ANALYSIS_TIMEOUT_MS || 30000);
+      const timeoutId = setTimeout(() => {
+        console.log(`⏰ [MAIN] Quick analysis timeout after ${timeoutMs} ms`);
+        try { pythonProcess.kill(); } catch (e) { }
+        reject(new Error(`Quick analysis timeout after ${timeoutMs} ms`));
+      }, timeoutMs);
+
+      pythonProcess.on('close', (code) => {
+        clearTimeout(timeoutId);
+        const result = Buffer.concat(resultChunks).toString('utf-8');
+        const error = Buffer.concat(errorChunks).toString('utf-8');
+
+        if (code === 0) {
+          try {
+            const analysis = JSON.parse(result);
+            if (!analysis || analysis.error) {
+              throw new Error(analysis?.message || 'Quick analyzer returned no data');
+            }
+            console.log(`⚡ [MAIN] Quick analysis completed in ${analysis.analysis_ms}ms`);
+            resolve(analysis);
+          } catch (parseError) {
+            reject(new Error(`Failed to parse quick analysis result: ${parseError.message}`));
+          }
+        } else {
+          reject(new Error(`Quick analysis failed (code ${code}). ${error || ''}`));
+        }
+      });
+
+      pythonProcess.on('error', (err) => {
+        reject(new Error(`Failed to start quick analysis: ${err.message}`));
+      });
+    });
+  } catch (error) {
+    console.log(`❌ [MAIN] Quick analysis failed: ${error.message}`);
+    throw new Error(`Quick analysis failed: ${error.message}`);
+  }
+});
+
 // Handle file selection
 ipcMain.handle('select-audio-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -345,54 +447,8 @@ ipcMain.handle('analyze-audio-files-batch', async (event, filePaths) => {
   }
 
   try {
-    // Find Python interpreter (reuse logic from single file analysis)
-    const envOverride = process.env.MIXEDIN_PYTHON && String(process.env.MIXEDIN_PYTHON).trim();
-    const systemCandidates = process.platform === 'win32'
-      ? ['python', 'python3']
-      : ['/usr/bin/python3', 'python3', 'python'];
-    const venvCandidates = process.platform === 'win32'
-      ? [
-        path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe'),
-        path.join(__dirname, '..', 'venv', 'Scripts', 'python3.exe')
-      ]
-      : [
-        path.join(__dirname, '..', 'venv', 'bin', 'python3'),
-        path.join(__dirname, '..', 'venv', 'bin', 'python')
-      ];
-
-    const candidates = [envOverride, ...systemCandidates, ...venvCandidates].filter((p) => !!p);
-
-    function preflightPython(p) {
-      try {
-        const script = 'import os; os.environ.setdefault("OPENBLAS_NUM_THREADS","1"); os.environ.setdefault("OMP_NUM_THREADS","1"); import numpy as _np; import soundfile as _sf; import librosa as _lb; print("ok")';
-        const res = spawnSync(p, ['-c', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-        if (res && res.status === 0 && String(res.stdout || '').toString().includes('ok')) {
-          return true;
-        }
-      } catch (e) {
-        // ignore
-      }
-      return false;
-    }
-
-    let pythonPath = null;
-    let venvBinPath = null;
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      const exists = candidate.includes(path.sep) ? fs.existsSync(candidate) : true;
-      if (!exists) continue;
-      if (preflightPython(candidate)) {
-        pythonPath = candidate;
-        if (candidate.includes(`${path.sep}venv${path.sep}`)) {
-          venvBinPath = path.dirname(candidate);
-        }
-        break;
-      }
-    }
-
-    if (!pythonPath) {
-      throw new Error('No working Python interpreter found');
-    }
+    // Use cached Python interpreter (avoids 200-500ms detection overhead per call)
+    const { pythonPath, venvBinPath } = getPythonInterpreter();
 
     // Find batch analyzer script
     let scriptPath = path.join(__dirname, 'backend', 'batch_analyzer.py');
@@ -596,28 +652,8 @@ ipcMain.handle('export-analysis', async (event, { filePath, analysis, format }) 
 const runExportScript = async (format, args) => {
   const scriptPath = path.join(__dirname, '..', 'src', 'backend', 'export_manager.py');
 
-  // Find Python
-  const systemCandidates = [
-    process.env.PYTHON_PATH,
-    'python3',
-    'python',
-    '/usr/local/bin/python3',
-    '/opt/homebrew/bin/python3'
-  ];
-  const venvCandidates = process.platform === 'win32'
-    ? [path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe')]
-    : [path.join(__dirname, '..', 'venv', 'bin', 'python3')];
-
-  const candidates = [...venvCandidates, ...systemCandidates].filter(p => !!p);
-
-  let pythonPath = 'python';
-  for (const candidate of candidates) {
-    try {
-      if (candidate.includes(path.sep) && !fs.existsSync(candidate)) continue;
-      pythonPath = candidate;
-      break;
-    } catch (e) { }
-  }
+  // Use cached Python interpreter
+  const { pythonPath } = getPythonInterpreter();
 
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonPath, [scriptPath, format, ...args]);
@@ -764,27 +800,8 @@ ipcMain.handle('separate-stems', async (event, { filePath, model }) => {
   const scriptPath = path.join(__dirname, '..', 'src', 'backend', 'stems', 'separator.py');
   console.log(`[MAIN] Starting stem separation for ${filePath}`);
 
-  // Find Python (reuse logic or copy)
-  const systemCandidates = [
-    process.env.PYTHON_PATH,
-    'python3',
-    'python',
-    '/Users/rahulsharma/Downloads/MixedInKey/venv/bin/python'
-  ];
-  const venvCandidates = process.platform === 'win32'
-    ? [path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe')]
-    : [path.join(__dirname, '..', 'venv', 'bin', 'python3')];
-
-  const candidates = [...venvCandidates, ...systemCandidates].filter(p => !!p);
-
-  let pythonPath = 'python';
-  for (const candidate of candidates) {
-    try {
-      if (candidate.includes(path.sep) && !fs.existsSync(candidate)) continue;
-      pythonPath = candidate;
-      break;
-    } catch (e) { }
-  }
+  // Use cached Python interpreter
+  const { pythonPath } = getPythonInterpreter();
 
   return new Promise((resolve, reject) => {
     // python separator.py <file>

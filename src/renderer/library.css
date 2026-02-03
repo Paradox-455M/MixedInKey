@@ -4,6 +4,7 @@
     border-radius: 8px;
     overflow: hidden;
     margin-bottom: 24px;
+    transition: background 0.3s ease;
 }
 
 .library-toolbar {
@@ -81,6 +82,7 @@
     background: var(--bg-secondary, #1f2937);
     border-radius: 8px;
     overflow: hidden;
+    transition: background 0.3s ease;
 }
 
 .library-table-wrapper {
@@ -200,6 +202,15 @@
     padding: 0 12px;
     display: flex;
     align-items: center;
+}
+
+.col-loudness {
+    width: 70px;
+    flex-shrink: 0;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Virtual List Container */
@@ -579,4 +590,39 @@
 
 .stem-play-btn:hover {
     background: #a855f7;
+}
+
+/* Actions Column */
+.col-actions {
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.col-actions.header-cell {
+    min-width: 40px;
+}
+
+.find-similar-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: #52525b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.find-similar-btn:hover {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+.find-similar-btn:active {
+    transform: scale(0.95);
 }

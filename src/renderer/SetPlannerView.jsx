@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, memo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload, 
@@ -511,4 +511,4 @@ const SetPlannerView = ({
   );
 };
 
-export default SetPlannerView;
+export default memo(SetPlannerView);

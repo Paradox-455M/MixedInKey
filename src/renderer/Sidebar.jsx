@@ -1,5 +1,5 @@
-import React from 'react';
-import { Music, ListMusic, Sparkles, FileAudio, Disc } from 'lucide-react';
+import React, { memo } from 'react';
+import { Music, ListMusic, Sparkles, FileAudio, Disc, Settings } from 'lucide-react';
 import './sidebar.css';
 
 const Sidebar = ({ currentView, onViewChange }) => {
@@ -27,6 +27,12 @@ const Sidebar = ({ currentView, onViewChange }) => {
       label: 'Library',
       icon: Sparkles,
       description: 'Browse analyzed tracks'
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: Settings,
+      description: 'App settings and preferences'
     }
   ];
 
@@ -72,4 +78,4 @@ const Sidebar = ({ currentView, onViewChange }) => {
   );
 };
 
-export default Sidebar;
+export default memo(Sidebar);

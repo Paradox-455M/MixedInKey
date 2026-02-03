@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import {
     ArrowUpDown,
     ArrowUp,
@@ -244,7 +244,7 @@ const SetPlannerTable = ({
     );
 };
 
-export default SetPlannerTable;
+export default memo(SetPlannerTable);
 
 const MiniCueTimeline = ({ track }) => {
     const cues = track.analysis?.cue_points || [];

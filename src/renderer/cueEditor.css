@@ -1,0 +1,340 @@
+/* Cue Point Editor Styles */
+.cue-editor-panel {
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+    max-height: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.cue-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-primary, #27272a);
+}
+
+.cue-editor-header h4 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary, #e4e4e7);
+    margin: 0;
+}
+
+.cue-editor-close {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary, #71717a);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cue-editor-close:hover {
+    background: var(--bg-tertiary, #27272a);
+    color: var(--text-primary, #e4e4e7);
+}
+
+.cue-editor-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.cue-editor-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    background: var(--bg-tertiary, #27272a);
+    border-radius: 6px;
+    border-left: 3px solid #ef4444;
+    transition: background 0.2s;
+}
+
+.cue-editor-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.cue-editor-item.editing {
+    padding: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.cue-item-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    cursor: pointer;
+    min-width: 0;
+}
+
+.cue-item-marker {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cue-item-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary, #e4e4e7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+.cue-item-time {
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--text-tertiary, #71717a);
+    flex-shrink: 0;
+}
+
+.cue-item-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.cue-editor-item:hover .cue-item-actions {
+    opacity: 1;
+}
+
+.cue-edit-btn,
+.cue-delete-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.cue-edit-btn {
+    background: transparent;
+    color: var(--text-tertiary, #71717a);
+}
+
+.cue-edit-btn:hover {
+    background: var(--accent-primary, #8b5cf6);
+    color: white;
+}
+
+.cue-delete-btn {
+    background: transparent;
+    color: var(--text-tertiary, #71717a);
+}
+
+.cue-delete-btn:hover {
+    background: #ef4444;
+    color: white;
+}
+
+/* Edit Form */
+.cue-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cue-edit-name,
+.cue-add-name,
+.cue-add-time {
+    background: var(--bg-primary, #0f0f23);
+    border: 1px solid var(--border-secondary, #3f3f46);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    color: var(--text-primary, #e4e4e7);
+    outline: none;
+}
+
+.cue-edit-name:focus,
+.cue-add-name:focus,
+.cue-add-time:focus {
+    border-color: var(--accent-primary, #8b5cf6);
+}
+
+.cue-color-picker {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.cue-color-picker.small {
+    gap: 2px;
+}
+
+.color-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.color-swatch:hover {
+    transform: scale(1.1);
+}
+
+.color-swatch.selected {
+    border-color: white;
+    box-shadow: 0 0 0 1px var(--bg-primary, #0f0f23);
+}
+
+.cue-edit-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+}
+
+.cue-save-btn,
+.cue-cancel-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.cue-save-btn {
+    background: #10b981;
+    color: white;
+}
+
+.cue-cancel-btn {
+    background: var(--bg-tertiary, #27272a);
+    color: var(--text-secondary, #a1a1aa);
+}
+
+/* Add Cue Form */
+.cue-add-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    background: var(--bg-tertiary, #27272a);
+    border-radius: 6px;
+}
+
+.cue-add-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.cue-confirm-add {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--accent-primary, #8b5cf6);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.cue-confirm-add:hover {
+    background: var(--accent-hover, #7c3aed);
+}
+
+.cue-cancel-add {
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--text-tertiary, #71717a);
+    border: 1px solid var(--border-secondary, #3f3f46);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.cue-cancel-add:hover {
+    background: var(--bg-tertiary, #27272a);
+    color: var(--text-primary, #e4e4e7);
+}
+
+.cue-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    border: 1px dashed var(--border-secondary, #3f3f46);
+    border-radius: 6px;
+    color: var(--text-tertiary, #71717a);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.cue-add-btn:hover {
+    border-color: var(--accent-primary, #8b5cf6);
+    color: var(--accent-primary, #8b5cf6);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.cue-empty-state {
+    text-align: center;
+    padding: 16px;
+    color: var(--text-tertiary, #71717a);
+    font-size: 12px;
+}
+
+/* Toggle button for deck */
+.cue-editor-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--border-secondary, #3f3f46);
+    border-radius: 4px;
+    color: var(--text-tertiary, #71717a);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.cue-editor-toggle:hover {
+    background: var(--bg-tertiary, #27272a);
+    color: var(--text-primary, #e4e4e7);
+    border-color: var(--accent-primary, #8b5cf6);
+}
+
+.cue-editor-toggle.active {
+    background: var(--accent-primary, #8b5cf6);
+    color: white;
+    border-color: var(--accent-primary, #8b5cf6);
+}

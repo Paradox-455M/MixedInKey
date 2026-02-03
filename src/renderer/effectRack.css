@@ -1,0 +1,307 @@
+/* ================================================
+   EFFECT RACK - Mixxx-Inspired Effect System
+   ================================================ */
+
+.effect-rack {
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.effect-rack.collapsed .er-content {
+    display: none;
+}
+
+/* ================================================
+   HEADER
+   ================================================ */
+.er-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #1f1f23;
+    border-bottom: 1px solid #27272a;
+}
+
+.er-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #a1a1aa;
+    letter-spacing: 0.05em;
+}
+
+.er-title svg {
+    color: #8b5cf6;
+}
+
+.er-collapse-btn {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    color: #71717a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.er-collapse-btn:hover {
+    background: #27272a;
+    color: #e4e4e7;
+}
+
+/* ================================================
+   CONTENT AREA
+   ================================================ */
+.er-content {
+    display: flex;
+    gap: 16px;
+    padding: 12px;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.er-divider {
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, #3f3f46, transparent);
+    align-self: stretch;
+}
+
+/* ================================================
+   DECK EFFECT CHAIN
+   ================================================ */
+.er-deck-chain {
+    flex: 1;
+    min-width: 0;
+}
+
+.er-chain-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.er-deck-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+}
+
+.er-superknob-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.er-link-btn {
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #52525b;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.er-link-btn:hover {
+    border-color: #8b5cf6;
+    color: #8b5cf6;
+}
+
+.er-link-btn.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+
+.er-superknob {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.er-super-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.05em;
+}
+
+/* ================================================
+   EFFECTS GRID
+   ================================================ */
+.er-effects-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+@media (max-width: 1200px) {
+    .er-effects-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 800px) {
+    .er-content {
+        flex-direction: column;
+    }
+
+    .er-divider {
+        width: 100%;
+        height: 1px;
+    }
+}
+
+/* ================================================
+   EFFECT UNIT
+   ================================================ */
+.er-effect-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 8px;
+    background: #1a1a1e;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.er-effect-unit:hover {
+    border-color: #3f3f46;
+}
+
+.er-effect-unit.active {
+    border-color: var(--effect-color, #8b5cf6);
+    box-shadow: 0 0 0 1px var(--effect-color, #8b5cf640);
+}
+
+/* Toggle Button */
+.er-toggle {
+    width: 24px;
+    height: 24px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 50%;
+    color: #52525b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.er-toggle:hover {
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.er-toggle.on {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+/* Effect Info */
+.er-effect-info {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 2px 0;
+}
+
+.er-effect-name {
+    font-size: 9px;
+    font-weight: 700;
+    color: #71717a;
+    letter-spacing: 0.05em;
+}
+
+.er-effect-unit.active .er-effect-name {
+    color: #a1a1aa;
+}
+
+/* Knob Value Display */
+.er-knob-value {
+    font-size: 10px;
+    font-family: 'SF Mono', monospace;
+    color: #52525b;
+}
+
+.er-effect-unit.active .er-knob-value {
+    color: #71717a;
+}
+
+/* ================================================
+   KNOB COMPONENT
+   ================================================ */
+.er-knob {
+    position: relative;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.er-knob.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.er-knob-track {
+    position: absolute;
+    inset: 0;
+}
+
+.er-knob-fill {
+    transition: stroke-dashoffset 0.05s;
+}
+
+.er-knob-dial {
+    position: absolute;
+    inset: 6px;
+    background: linear-gradient(135deg, #2a2a2e 0%, #1a1a1e 100%);
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.er-knob-dot {
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+}
+
+/* ================================================
+   RESPONSIVE
+   ================================================ */
+@media (max-width: 600px) {
+    .er-effects-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .er-effect-unit {
+        padding: 8px 6px;
+    }
+}
