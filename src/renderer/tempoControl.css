@@ -1,0 +1,350 @@
+/* ================================================
+   TEMPO CONTROL - Professional Pitch/Tempo Fader
+   ================================================ */
+
+.tempo-control {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background: #1a1a1e;
+    border-radius: 8px;
+    border: 1px solid #27272a;
+    min-width: 70px;
+}
+
+/* BPM Display */
+.tempo-display {
+    text-align: center;
+}
+
+.bpm-value {
+    font-family: 'SF Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #e4e4e7;
+    transition: color 0.2s;
+}
+
+.bpm-value.modified {
+    color: #8b5cf6;
+}
+
+.bpm-label {
+    font-size: 8px;
+    color: #52525b;
+    letter-spacing: 0.1em;
+}
+
+/* Tempo Percentage Display */
+.tempo-percent-display {
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 6px;
+    background: #27272a;
+    border-radius: 3px;
+}
+
+.tempo-percent-display .positive {
+    color: #22c55e;
+}
+
+.tempo-percent-display .negative {
+    color: #ef4444;
+}
+
+/* Vertical Fader */
+.tempo-fader-container {
+    display: flex;
+    gap: 4px;
+    height: 120px;
+}
+
+.tempo-scale {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-size: 8px;
+    color: #52525b;
+    font-family: monospace;
+}
+
+.tempo-fader {
+    width: 24px;
+    height: 100%;
+    cursor: pointer;
+    position: relative;
+}
+
+.tempo-fader-track {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px;
+    height: 100%;
+    background: #27272a;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.tempo-fader-center {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #52525b;
+    transform: translateY(-50%);
+}
+
+.tempo-fader-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, #8b5cf6, #c4b5fd);
+    transition: height 0.05s, top 0.05s;
+}
+
+.tempo-fader-thumb {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 10px;
+    background: linear-gradient(135deg, #4b4b50 0%, #2a2a2e 100%);
+    border: 1px solid #52525b;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    cursor: grab;
+    transition: top 0.05s;
+}
+
+.tempo-fader-thumb:active {
+    cursor: grabbing;
+}
+
+/* Nudge Buttons */
+.tempo-nudge {
+    display: flex;
+    gap: 4px;
+}
+
+.nudge-btn {
+    width: 28px;
+    height: 28px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #a1a1aa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+}
+
+.nudge-btn:hover {
+    background: #3f3f46;
+    color: #e4e4e7;
+}
+
+.nudge-btn:active {
+    background: #8b5cf6;
+    color: #fff;
+}
+
+/* Control Buttons */
+.tempo-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.tempo-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.tempo-btn:hover {
+    background: #3f3f46;
+    color: #e4e4e7;
+}
+
+.tempo-btn.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: #fff;
+}
+
+.tempo-btn.key-lock.active {
+    background: #22c55e;
+    border-color: #22c55e;
+}
+
+.tempo-btn.sync.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    animation: syncPulse 0.5s ease;
+}
+
+@keyframes syncPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* ================================================
+   COMPACT TEMPO CONTROL
+   ================================================ */
+
+.tempo-control-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: #1a1a1e;
+    border-radius: 6px;
+    border: 1px solid #27272a;
+    min-width: 100px;
+}
+
+.tempo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tempo-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+}
+
+.key-lock-btn {
+    width: 18px;
+    height: 18px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #52525b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.key-lock-btn:hover {
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.key-lock-btn.active {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: #fff;
+}
+
+.tempo-value-compact {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.bpm-display {
+    font-family: 'SF Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #e4e4e7;
+}
+
+.bpm-display.modified {
+    color: #8b5cf6;
+}
+
+.tempo-percent {
+    font-family: 'SF Mono', monospace;
+    font-size: 10px;
+    color: #71717a;
+}
+
+.tempo-slider-horizontal {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #27272a;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.tempo-slider-horizontal::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: linear-gradient(135deg, #4b4b50 0%, #2a2a2e 100%);
+    border: 1px solid #52525b;
+    border-radius: 3px;
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.tempo-slider-horizontal::-webkit-slider-thumb:active {
+    cursor: grabbing;
+}
+
+/* ================================================
+   SYNC BUTTON
+   ================================================ */
+
+.sync-button {
+    padding: 6px 12px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.sync-button:hover:not(:disabled) {
+    background: #3f3f46;
+    color: #e4e4e7;
+    border-color: #3b82f6;
+}
+
+.sync-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.sync-button.synced {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+    animation: syncFlash 0.3s ease;
+}
+
+@keyframes syncFlash {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+    100% { transform: scale(1); }
+}

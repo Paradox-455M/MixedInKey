@@ -159,6 +159,11 @@ class CacheManager:
                     num_floats = len(waveform_blob) // 4
                     analysis['waveform_data'] = list(struct.unpack(f'{num_floats}f', waveform_blob))
 
+                # Force re-analysis if RGB waveform data is missing (cache migration)
+                if 'rgb_waveform_data' not in analysis:
+                    logger.info(f"Cache miss: rgb_waveform_data missing for {file_path}, re-analyzing")
+                    return None
+
                 return analysis
 
             return None
@@ -2811,21 +2816,30 @@ class AudioAnalyzer:
 
             # Generate waveform data for visualization
             waveform_data = self._generate_waveform_data(y, sr)
+            rgb_waveform_data = self._generate_rgb_waveform_data(y, sr)
             audio_stats = self._calculate_audio_stats(y, sr)
 
             # Basic audio analysis
             # Parallelize independent heavy tasks - pass precomputed features to avoid redundant DSP
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Use pipeline's structure stage output if available (chroma self-similarity),
+            # otherwise fall back to the legacy MFCC-based method
+            pipeline_structure = pipeline_result.get("song_structure", [])
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_key = executor.submit(self.detect_key_rekordbox_algorithm, y, sr, self._features)
                 future_bpm = executor.submit(self.detect_bpm_rekordbox_algorithm, y, sr, self._features)
-                future_energy = executor.submit(self._analyze_energy_levels, y, sr, self._features)
-                future_structure = executor.submit(self.detect_song_structure_rekordbox_algorithm, y, sr, duration)
+                # Energy analysis now receives song_structure for structure-aligned profiling
+                future_energy = executor.submit(self._analyze_energy_levels, y, sr, self._features, pipeline_structure)
 
                 camelot_key, mode, key_conf = future_key.result()
                 bpm = int(round(future_bpm.result()))
-                # Compute energy early to drive genre presets
                 energy_analysis = future_energy.result()
-                song_structure = future_structure.result()
+
+            # Use pipeline structure or fall back to legacy detection
+            if pipeline_structure and len(pipeline_structure) >= 2:
+                song_structure = pipeline_structure
+            else:
+                song_structure = self.detect_song_structure_rekordbox_algorithm(y, sr, duration)
 
             # Determine genre and cue detection parameters
             genre, cue_params = self.detect_genre_and_params(bpm, energy_analysis, y, sr)
@@ -2889,6 +2903,7 @@ class AudioAnalyzer:
                 'duration': duration,
                 'sample_rate': sr,
                 'waveform_data': waveform_data,
+                'rgb_waveform_data': rgb_waveform_data,
                 'audio_stats': audio_stats,
                 'key': camelot_key,
                 'key_mode': mode,
@@ -3215,9 +3230,113 @@ class AudioAnalyzer:
                     waveform = [val / max_val for val in waveform]
             
             return waveform
-            
+
         except Exception as e:
             return []
+
+    def _generate_rgb_waveform_data(self, y: np.ndarray, sr: int, num_points: int = 1500) -> Dict[str, List[float]]:
+        """Generate RGB waveform data for professional DJ-style visualization.
+
+        Splits audio into three frequency bands like Mixxx/Rekordbox/Serato:
+        - Red (low): 20-250 Hz - kicks, sub-bass
+        - Green (mid): 250-4000 Hz - vocals, synths, snares
+        - Blue (high): 4000-20000 Hz - hi-hats, cymbals, air
+
+        Args:
+            y: Audio time series
+            sr: Sample rate
+            num_points: Target number of data points for visualization
+
+        Returns:
+            Dict with 'low', 'mid', 'high' arrays, each normalized 0-1
+        """
+        try:
+            from scipy.signal import butter, sosfilt
+
+            # Define frequency bands (in Hz)
+            LOW_FREQ = (20, 250)
+            MID_FREQ = (250, 4000)
+            HIGH_FREQ = (4000, min(20000, sr // 2 - 1))  # Nyquist limit
+
+            def bandpass_filter(data, lowcut, highcut, fs, order=4):
+                """Apply bandpass filter to isolate frequency band."""
+                nyq = 0.5 * fs
+                low = max(lowcut / nyq, 0.001)
+                high = min(highcut / nyq, 0.999)
+                if low >= high:
+                    return np.zeros_like(data)
+                sos = butter(order, [low, high], btype='band', output='sos')
+                return sosfilt(sos, data)
+
+            def lowpass_filter(data, cutoff, fs, order=4):
+                """Apply lowpass filter for sub-bass."""
+                nyq = 0.5 * fs
+                normalized_cutoff = min(cutoff / nyq, 0.999)
+                sos = butter(order, normalized_cutoff, btype='low', output='sos')
+                return sosfilt(sos, data)
+
+            def highpass_filter(data, cutoff, fs, order=4):
+                """Apply highpass filter for highs."""
+                nyq = 0.5 * fs
+                normalized_cutoff = max(cutoff / nyq, 0.001)
+                sos = butter(order, normalized_cutoff, btype='high', output='sos')
+                return sosfilt(sos, data)
+
+            # Filter into frequency bands
+            y_low = bandpass_filter(y, LOW_FREQ[0], LOW_FREQ[1], sr)
+            y_mid = bandpass_filter(y, MID_FREQ[0], MID_FREQ[1], sr)
+            y_high = highpass_filter(y, HIGH_FREQ[0], sr)
+
+            # Calculate hop length for target points
+            hop_length = max(1, len(y) // num_points)
+
+            # Calculate RMS for each band in windows
+            low_rms = []
+            mid_rms = []
+            high_rms = []
+
+            for i in range(0, len(y), hop_length):
+                end = min(i + hop_length, len(y))
+
+                # Low band RMS
+                window_low = y_low[i:end]
+                if len(window_low) > 0:
+                    low_rms.append(float(np.sqrt(np.mean(window_low**2))))
+                else:
+                    low_rms.append(0.0)
+
+                # Mid band RMS
+                window_mid = y_mid[i:end]
+                if len(window_mid) > 0:
+                    mid_rms.append(float(np.sqrt(np.mean(window_mid**2))))
+                else:
+                    mid_rms.append(0.0)
+
+                # High band RMS
+                window_high = y_high[i:end]
+                if len(window_high) > 0:
+                    high_rms.append(float(np.sqrt(np.mean(window_high**2))))
+                else:
+                    high_rms.append(0.0)
+
+            # Normalize each band independently to 0-1 range
+            def normalize(arr):
+                if not arr:
+                    return arr
+                max_val = max(arr)
+                if max_val > 0:
+                    return [v / max_val for v in arr]
+                return arr
+
+            return {
+                'low': normalize(low_rms),
+                'mid': normalize(mid_rms),
+                'high': normalize(high_rms)
+            }
+
+        except Exception as e:
+            logger.warning(f"RGB waveform generation failed: {e}")
+            return {'low': [], 'mid': [], 'high': []}
 
     def _calculate_audio_stats(self, y: np.ndarray, sr: int = 22050) -> Dict[str, float]:
         """Compute peak/RMS/LUFS stats for headroom and gain matching."""
@@ -3281,13 +3400,14 @@ class AudioAnalyzer:
                 "crest_db": None, "lufs": None, "gain_to_target": None
             }
 
-    def _analyze_energy_levels(self, y, sr, features=None):
+    def _analyze_energy_levels(self, y, sr, features=None, song_structure=None):
         """Analyze energy levels using the energy analysis module.
 
         Args:
             y: Audio time series
             sr: Sample rate
             features: Optional precomputed features dict from _precompute_features()
+            song_structure: Optional list of structure sections from StructureStage
         """
         try:
             import sys
@@ -3295,11 +3415,10 @@ class AudioAnalyzer:
             sys.path.append(os.path.join(os.path.dirname(__file__), 'tools'))
             from energy_analysis import EnergyAnalyzer
             energy_analyzer = EnergyAnalyzer()
-            # Pass features to energy analyzer if it supports them
+            # Pass song_structure for structure-aligned energy profiling
             try:
-                return energy_analyzer.analyze_energy_level(y, sr, features=features)
+                return energy_analyzer.analyze_energy_level(y, sr, song_structure=song_structure)
             except TypeError:
-                # Fallback if energy analyzer doesn't support features parameter
                 return energy_analyzer.analyze_energy_level(y, sr)
         except Exception as e:
             logger.warning(f"Energy analysis failed: {str(e)}")

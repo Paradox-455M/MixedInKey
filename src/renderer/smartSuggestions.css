@@ -1,0 +1,292 @@
+/* ================================================
+   SMART SUGGESTIONS - AI-Powered Track Recommendations
+   ================================================ */
+
+.smart-suggestions {
+    background: #1f1f23;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.smart-suggestions.empty {
+    opacity: 0.7;
+}
+
+/* Header */
+.suggestions-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #1a1a1e;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.suggestions-header:hover {
+    background: #222228;
+}
+
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a1a1aa;
+}
+
+.header-title svg {
+    color: #f59e0b;
+}
+
+.suggestion-count {
+    color: #52525b;
+    font-weight: 400;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #52525b;
+}
+
+/* Transition Type Selector */
+.transition-selector {
+    display: flex;
+    gap: 2px;
+    background: #27272a;
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.transition-btn {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: #52525b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.transition-btn:hover {
+    color: #a1a1aa;
+    background: #3f3f46;
+}
+
+.transition-btn.active {
+    background: #8b5cf6;
+    color: #fff;
+}
+
+.transition-btn.active[title*="build"] {
+    background: #22c55e;
+}
+
+.transition-btn.active[title*="reduce"] {
+    background: #3b82f6;
+}
+
+/* Suggestions List */
+.suggestions-list {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.no-suggestions {
+    text-align: center;
+    color: #52525b;
+    font-size: 11px;
+    padding: 16px;
+    margin: 0;
+}
+
+/* Individual Suggestion Item */
+.suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: #27272a;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.suggestion-item:hover {
+    background: #3f3f46;
+    border-color: #8b5cf6;
+}
+
+/* Rank Number */
+.suggestion-rank {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1e;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 700;
+    color: #71717a;
+    flex-shrink: 0;
+}
+
+.suggestion-item:first-child .suggestion-rank {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #000;
+}
+
+.suggestion-item:nth-child(2) .suggestion-rank {
+    background: linear-gradient(135deg, #71717a, #52525b);
+    color: #fff;
+}
+
+.suggestion-item:nth-child(3) .suggestion-rank {
+    background: linear-gradient(135deg, #a16207, #854d0e);
+    color: #fff;
+}
+
+/* Track Info */
+.suggestion-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.suggestion-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #e4e4e7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggestion-name svg {
+    color: #52525b;
+    flex-shrink: 0;
+}
+
+.suggestion-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+}
+
+.meta-bpm {
+    color: #71717a;
+    font-family: 'SF Mono', monospace;
+}
+
+.meta-key {
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 600;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+}
+
+.meta-energy {
+    color: #8b5cf6;
+    font-weight: 600;
+}
+
+/* Score Display */
+.suggestion-score {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 70px;
+    flex-shrink: 0;
+}
+
+.score-bar {
+    flex: 1;
+    height: 4px;
+    background: #1a1a1e;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.score-fill {
+    height: 100%;
+    background: linear-gradient(to right, #8b5cf6, #22c55e);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.score-value {
+    font-size: 10px;
+    font-weight: 600;
+    color: #22c55e;
+    font-family: 'SF Mono', monospace;
+    min-width: 28px;
+    text-align: right;
+}
+
+/* Reason Tags */
+.suggestion-reasons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 120px;
+}
+
+.reason-tag {
+    padding: 2px 6px;
+    background: rgba(139, 92, 246, 0.15);
+    border-radius: 3px;
+    font-size: 8px;
+    color: #a78bfa;
+    white-space: nowrap;
+}
+
+/* Collapsed State */
+.smart-suggestions.collapsed .suggestions-list {
+    display: none;
+}
+
+/* Scrollbar */
+.suggestions-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.suggestions-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.suggestions-list::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 2px;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+    .suggestion-reasons {
+        display: none;
+    }
+
+    .suggestion-score {
+        width: 50px;
+    }
+}

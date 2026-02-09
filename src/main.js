@@ -138,27 +138,66 @@ function buildRekordboxXml({ tracks, playlistName, includeCuePoints = false }) {
   lines.push('<DJ_PLAYLISTS Version="1.0.0">');
   lines.push('  <PRODUCT Name="rekordbox" Version="7.0.4" Company="AlphaTheta"/>');
   lines.push(`  <COLLECTION Entries="${entries}">`);
+
+  // Hot cue colors for Rekordbox (RGB values)
+  const HOT_CUE_COLORS = [
+    '0xFF0000', // Red
+    '0xFF7700', // Orange
+    '0xFFFF00', // Yellow
+    '0x00FF00', // Green
+    '0x00FFFF', // Cyan
+    '0x0000FF', // Blue
+    '0x8800FF', // Purple
+    '0xFF00FF'  // Pink
+  ];
+
   tracks.forEach((track, idx) => {
     const trackId = idx + 1;
     const location = filePathToUrl(track.path);
     const bpm = track.bpm ? `AverageBpm="${Math.round(track.bpm)}"` : '';
     const key = track.key ? `Tonality="${track.key}"` : '';
-    
+
     lines.push(`    <TRACK TrackID="${trackId}" Name="${escapeXml(track.name)}" ` +
       `Artist="${escapeXml(track.artist || 'Unknown Artist')}" ` +
       `Album="${escapeXml(track.album || 'Unknown Album')}" ` +
       `Location="${escapeXml(location)}" ${bpm} ${key}>`);
-    
-    // Add cue points if available and requested
+
+    let cueNum = 0;
+
+    // Add analysis cue points if available and requested
     if (includeCuePoints && track.analysis && track.analysis.cue_points) {
       track.analysis.cue_points.forEach((cue, cueIdx) => {
         const cueName = escapeXml(cue.name || `Cue ${cueIdx + 1}`);
         const cueTime = Math.round((cue.time || 0) * 1000); // Convert to milliseconds
         const cueType = cue.type || 'CUE';
-        lines.push(`      <POSITION_MARK Name="${cueName}" Type="${cueType}" Start="${cueTime}" />`);
+        lines.push(`      <POSITION_MARK Name="${cueName}" Type="${cueType}" Start="${cueTime}" Num="${cueNum}" />`);
+        cueNum++;
       });
     }
-    
+
+    // Add performance hot cues (from MixerPanel)
+    if (includeCuePoints && track.performanceCues && Array.isArray(track.performanceCues)) {
+      track.performanceCues.forEach((cue, cueIdx) => {
+        if (cue && cue.time !== undefined && cue.time !== null) {
+          const cueName = escapeXml(`Hot Cue ${cueIdx + 1}`);
+          const cueTime = Math.round(cue.time * 1000); // Convert to milliseconds
+          const cueColor = HOT_CUE_COLORS[cueIdx] || '0xFF0000';
+          lines.push(`      <POSITION_MARK Name="${cueName}" Type="0" Start="${cueTime}" Num="${cueNum}" Red="${parseInt(cueColor.slice(2, 4), 16)}" Green="${parseInt(cueColor.slice(4, 6), 16)}" Blue="${parseInt(cueColor.slice(6, 8), 16)}" />`);
+          cueNum++;
+        }
+      });
+    }
+
+    // Add performance loop if active
+    if (includeCuePoints && track.performanceLoop && track.performanceLoop.active &&
+        track.performanceLoop.start !== null && track.performanceLoop.end !== null) {
+      const loopStart = Math.round(track.performanceLoop.start * 1000);
+      const loopEnd = Math.round(track.performanceLoop.end * 1000);
+      const loopName = escapeXml(`${track.performanceLoop.size}-beat Loop`);
+      lines.push(`      <POSITION_MARK Name="${loopName}" Type="4" Start="${loopStart}" End="${loopEnd}" Num="${cueNum}" />`);
+      cueNum++;
+    }
+
     // Add mix in/out points
     if (track.mixInTime !== undefined && track.mixInTime !== null) {
       const mixInMs = Math.round(track.mixInTime * 1000);
@@ -168,7 +207,7 @@ function buildRekordboxXml({ tracks, playlistName, includeCuePoints = false }) {
       const mixOutMs = Math.round(track.mixOutTime * 1000);
       lines.push(`      <POSITION_MARK Name="Mix Out" Type="CUE" Start="${mixOutMs}" />`);
     }
-    
+
     lines.push('    </TRACK>');
   });
   lines.push('  </COLLECTION>');

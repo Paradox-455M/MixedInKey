@@ -9,6 +9,12 @@ import librosa
 from typing import Dict, List, Tuple, Optional
 from enum import Enum
 
+try:
+    import pyloudnorm as pyln
+    _HAS_PYLOUDNORM = True
+except ImportError:
+    _HAS_PYLOUDNORM = False
+
 class EnergyLevel(Enum):
     """Energy level classifications."""
     VERY_LOW = 1
@@ -48,19 +54,20 @@ class EnergyAnalyzer:
             'energy_oscillation': 'Alternate between high and low energy'
         }
 
-    def analyze_energy_level(self, y: np.ndarray, sr: int) -> Dict:
-        """Analyze energy with perceptual loudness and robust normalization."""
+    def analyze_energy_level(self, y: np.ndarray, sr: int, song_structure: List[Dict] = None) -> Dict:
+        """Analyze energy with perceptual loudness, LUFS, and robust normalization."""
         try:
             # Calculate various energy metrics (normalized 0-1)
             rms_energy = self._calculate_rms_energy(y, sr)
             loudness = self._calculate_perceptual_loudness(y, sr)
+            lufs_loudness = self._calculate_lufs_loudness(y, sr)
             spectral_energy = self._calculate_spectral_energy(y, sr)
             rhythmic_energy = self._calculate_rhythmic_energy(y, sr)
             dynamic_energy = self._calculate_dynamic_energy(y, sr)
 
             # Combine metrics for overall energy score (0-1)
             overall_energy_0_1 = self._combine_energy_metrics(
-                rms_energy, spectral_energy, rhythmic_energy, dynamic_energy, loudness
+                rms_energy, spectral_energy, rhythmic_energy, dynamic_energy, loudness, lufs_loudness
             )
 
             # Map to 1-10
@@ -70,9 +77,11 @@ class EnergyAnalyzer:
             energy_level = self._classify_energy_level(overall_energy)
 
             # Calculate energy profile over structural segments, normalized per track
-            energy_profile = self._calculate_energy_profile(y, sr)
+            energy_profile = self._calculate_energy_profile(y, sr, song_structure)
             # Calculate continuous energy curve over entire track for line graph
             energy_curve = self._compute_energy_curve(y, sr)
+            # Calculate LUFS time-series curve
+            lufs_curve = self._compute_lufs_curve(y, sr)
 
             return {
                 'overall_energy': round(float(overall_energy), 2),
@@ -82,16 +91,18 @@ class EnergyAnalyzer:
                 'energy_metrics': {
                     'rms_energy': float(rms_energy),
                     'perceptual_loudness': float(loudness),
+                    'lufs_loudness': float(lufs_loudness),
                     'spectral_energy': float(spectral_energy),
                     'rhythmic_energy': float(rhythmic_energy),
                     'dynamic_energy': float(dynamic_energy)
                 },
                 'energy_profile': energy_profile,
                 'energy_curve': energy_curve,
+                'lufs_curve': lufs_curve,
                 'energy_peaks': self._find_energy_peaks(energy_profile),
                 'energy_valleys': self._find_energy_valleys(energy_profile)
             }
-            
+
         except Exception as e:
             raise Exception(f"Energy analysis failed: {str(e)}")
 
@@ -160,6 +171,80 @@ class EnergyAnalyzer:
         except Exception:
             return 0.0
 
+    def _calculate_lufs_loudness(self, y: np.ndarray, sr: int) -> float:
+        """Calculate integrated LUFS loudness (0-1) using pyloudnorm or fallback."""
+        try:
+            if _HAS_PYLOUDNORM:
+                meter = pyln.Meter(sr)
+                # pyloudnorm expects shape (samples,) or (samples, channels)
+                lufs = meter.integrated_loudness(y)
+                if np.isnan(lufs) or np.isinf(lufs):
+                    lufs = -40.0
+            else:
+                # Fallback: approximate LUFS from RMS in dB
+                rms = np.sqrt(np.mean(y ** 2))
+                lufs = 20.0 * np.log10(rms + 1e-10)
+            # Map LUFS [-40, -6] → [0, 1]
+            return float(np.clip((lufs + 40.0) / 34.0, 0.0, 1.0))
+        except Exception:
+            return 0.0
+
+    def _compute_lufs_curve(self, y: np.ndarray, sr: int) -> List[Dict]:
+        """Return LUFS time-series curve with ~200 points using 3-second sliding window."""
+        try:
+            window_sec = 3.0
+            window_samples = int(window_sec * sr)
+            if window_samples < 1 or len(y) < window_samples:
+                return []
+
+            # Target ~200 points
+            max_points = 200
+            hop_samples = max(1, (len(y) - window_samples) // max_points)
+
+            lufs_values = []
+            times = []
+
+            if _HAS_PYLOUDNORM:
+                meter = pyln.Meter(sr)
+                for start in range(0, len(y) - window_samples, hop_samples):
+                    segment = y[start:start + window_samples]
+                    lufs = meter.integrated_loudness(segment)
+                    if np.isnan(lufs) or np.isinf(lufs):
+                        lufs = -40.0
+                    lufs_values.append(lufs)
+                    times.append(start / sr)
+            else:
+                # Fallback: RMS-based approximation
+                for start in range(0, len(y) - window_samples, hop_samples):
+                    segment = y[start:start + window_samples]
+                    rms = np.sqrt(np.mean(segment ** 2))
+                    lufs = 20.0 * np.log10(rms + 1e-10)
+                    lufs_values.append(lufs)
+                    times.append(start / sr)
+
+            if not lufs_values:
+                return []
+
+            # Normalize to 1-10 scale for UI consistency
+            arr = np.array(lufs_values)
+            p5, p95 = np.percentile(arr, [5, 95])
+            if p95 > p5:
+                norm = np.clip((arr - p5) / (p95 - p5), 0.0, 1.0)
+            else:
+                norm = np.zeros_like(arr)
+            energy_1_10 = 1.0 + norm * 9.0
+
+            curve = []
+            for i in range(len(times)):
+                curve.append({
+                    'time': round(float(times[i]), 2),
+                    'lufs': round(float(lufs_values[i]), 1),
+                    'energy': round(float(energy_1_10[i]), 2)
+                })
+            return curve
+        except Exception:
+            return []
+
     def _calculate_spectral_energy(self, y: np.ndarray, sr: int) -> float:
         """Calculate spectral energy with frequency weighting."""
         try:
@@ -171,9 +256,9 @@ class EnergyAnalyzer:
             freq_bins = librosa.fft_frequencies(sr=sr, n_fft=2048)
             
             # Perceptually important frequency bands
-            # Low: 20-250 Hz (bass), Mid: 250-4000 Hz (vocals), High: 4000-16000 Hz (presence)
-            low_mask = (freq_bins >= 20) & (freq_bins <= 250)
-            mid_mask = (freq_bins >= 250) & (freq_bins <= 4000)
+            # Low: 20-500 Hz (bass+kick), Mid: 500-4000 Hz (vocals), High: 4000-16000 Hz (presence)
+            low_mask = (freq_bins >= 20) & (freq_bins <= 500)
+            mid_mask = (freq_bins >= 500) & (freq_bins <= 4000)
             high_mask = (freq_bins >= 4000) & (freq_bins <= 16000)
             
             # Weighted energy calculation
@@ -252,10 +337,10 @@ class EnergyAnalyzer:
         except Exception:
             return 0.0
 
-    def _combine_energy_metrics(self, rms: float, spectral: float, rhythmic: float, dynamic: float, loudness: float) -> float:
+    def _combine_energy_metrics(self, rms: float, spectral: float, rhythmic: float, dynamic: float, loudness: float, lufs: float = 0.0) -> float:
         """Combine metrics into overall energy in 0-1 space."""
-        weights = [0.3, 0.15, 0.25, 0.1, 0.2]  # RMS, Spectral, Rhythmic, Dynamic, Loudness
-        combined = (rms * weights[0] + spectral * weights[1] + rhythmic * weights[2] + dynamic * weights[3] + loudness * weights[4])
+        # Weights: RMS 0.15, Spectral 0.15, Rhythmic 0.25, Dynamic 0.1, Loudness 0.15, LUFS 0.20
+        combined = (rms * 0.15 + spectral * 0.15 + rhythmic * 0.25 + dynamic * 0.10 + loudness * 0.15 + lufs * 0.20)
         return float(np.clip(combined, 0.0, 1.0))
 
     def _classify_energy_level(self, energy_score: float) -> EnergyLevel:
@@ -281,12 +366,17 @@ class EnergyAnalyzer:
         else:
             return EnergyLevel.OVERDRIVE
 
-    def _calculate_energy_profile(self, y: np.ndarray, sr: int) -> List[Dict]:
+    def _calculate_energy_profile(self, y: np.ndarray, sr: int, song_structure: List[Dict] = None) -> List[Dict]:
         """Calculate energy profile over time with structural analysis and per-track normalization."""
         try:
-            # Use structural segmentation for meaningful energy sections
-            # This creates sections like Intro, Verse, Chorus, etc.
-            segments = self._detect_structural_segments(y, sr)
+            # Use provided song structure if available (from StructureStage), otherwise fallback
+            if song_structure and len(song_structure) >= 2:
+                segments = [
+                    {'name': s.get('type', 'Section').capitalize(), 'start': s['start'], 'end': s['end']}
+                    for s in song_structure if 'start' in s and 'end' in s
+                ]
+            else:
+                segments = self._detect_structural_segments(y, sr)
             
             energy_profile = []
             raw_scores = []

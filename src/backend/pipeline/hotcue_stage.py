@@ -3,12 +3,15 @@ from typing import Dict, Any, List
 
 class HotCueStage:
     """
-    Generates Hot Cues (A–E) from musically important cue types:
-      A = Intro
+    Generates Hot Cues (A–H) from musically important cue types:
+      A = Intro (Mix In)
       B = First Vocal / Verse
-      C = Chorus
-      D = Drop
-      E = Outro
+      C = First Chorus
+      D = First Build / Buildup
+      E = Main Drop
+      F = First Breakdown
+      G = Second Chorus (or second drop)
+      H = Outro (Mix Out)
 
     Includes:
       - alias matching
@@ -20,11 +23,14 @@ class HotCueStage:
         "intro": ["intro", "mix_in", "mixin"],
         "vocal": ["vocal", "verse", "vox", "lead_vocal"],
         "chorus": ["chorus", "hook"],
+        "build": ["build", "buildup", "build_up", "pre_chorus"],
         "drop": ["drop", "energy_peak", "climax"],
-        "outro": ["outro", "mix_out", "mixout"]
+        "breakdown": ["breakdown", "bridge"],
+        "outro": ["outro", "mix_out", "mixout"],
     }
 
-    ORDER = ["intro", "vocal", "chorus", "drop", "outro"]
+    ORDER = ["intro", "vocal", "chorus", "build", "drop", "breakdown", "chorus2", "outro"]
+    ALL_SLOTS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
     def _match(self, cue_type: str, target: str) -> bool:
         cue_type = str(cue_type).lower().strip()
@@ -58,15 +64,15 @@ class HotCueStage:
         intros = self._pick_all(cues, "intro")
         vocals = self._pick_all(cues, "vocal")
         choruses = self._pick_all(cues, "chorus")
+        builds = self._pick_all(cues, "build")
         drops = self._pick_all(cues, "drop")
+        breakdowns = self._pick_all(cues, "breakdown")
         outros = self._pick_all(cues, "outro")
         phrases = [c for c in cues if str(c.get("type", "")).lower() in ("phrase", "section")]
-        bridges = [c for c in cues if str(c.get("type", "")).lower() in ("bridge", "breakdown", "build", "buildup")]
 
         first_intro = intros[0] if intros else (phrases[0] if phrases else (cues[0] if cues else None))
         first_drop = None
         if drops:
-            # prefer main drop near 35–60% of track and/or highest confidence
             mid_start = duration * 0.35
             mid_end = duration * 0.60
             mid_drops = [d for d in drops if mid_start <= float(d.get("time", 0.0)) <= mid_end]
@@ -81,11 +87,11 @@ class HotCueStage:
             except Exception:
                 first_drop = drops[0]
 
-        # A = Intro
+        # A = Intro (Mix In)
         if first_intro:
             hot.append({"slot": "A", "cue": first_intro})
 
-        # B = First Vocal / Verse (prefer before drop; else first chorus)
+        # B = First Vocal / Verse
         b_cand = None
         if vocals:
             if first_drop:
@@ -100,60 +106,82 @@ class HotCueStage:
             pick = self._choose_with_spacing([b_cand], chosen, min_spacing) or b_cand
             hot.append({"slot": "B", "cue": pick})
 
-        # C = Chorus (prefer first chorus after drop or first strong chorus)
-        c_cand = None
-        if choruses:
-            if first_drop:
-                after = self._first_after(choruses, float(first_drop.get("time", 0.0)))
-                c_cand = after[0] if after else choruses[0]
-            else:
-                c_cand = choruses[0]
-        if not c_cand and vocals:
-            c_cand = vocals[1] if len(vocals) > 1 else None
+        # C = First Chorus
+        c_cand = choruses[0] if choruses else None
+        if not c_cand and vocals and len(vocals) > 1:
+            c_cand = vocals[1]
         if c_cand:
             chosen = [x["cue"] for x in hot]
             pick = self._choose_with_spacing([c_cand], chosen, min_spacing) or c_cand
             hot.append({"slot": "C", "cue": pick})
 
-        # D = Drop (main)
+        # D = First Build / Buildup
+        d_cand = builds[0] if builds else None
+        if not d_cand and first_drop:
+            # Look for any cue just before the drop as a build proxy
+            before_drop = [c for c in cues if float(c.get("time", 0.0)) < float(first_drop.get("time", 0.0)) - 4.0]
+            if before_drop:
+                d_cand = before_drop[-1]
+        if d_cand:
+            chosen = [x["cue"] for x in hot]
+            pick = self._choose_with_spacing([d_cand], chosen, min_spacing) or d_cand
+            hot.append({"slot": "D", "cue": pick})
+
+        # E = Main Drop
         if first_drop:
             chosen = [x["cue"] for x in hot]
             pick = self._choose_with_spacing([first_drop], chosen, min_spacing) or first_drop
-            hot.append({"slot": "D", "cue": pick})
-        else:
-            # fallback: strongest chorus as energy peak proxy
-            if choruses:
-                fallback = choruses[-1]
-                chosen = [x["cue"] for x in hot]
-                pick = self._choose_with_spacing([fallback], chosen, min_spacing) or fallback
-                hot.append({"slot": "D", "cue": pick})
-
-        # E = Outro (prefer last)
-        e_cand = outros[-1] if outros else (phrases[-1] if phrases else (cues[-1] if cues else None))
-        if e_cand:
+            hot.append({"slot": "E", "cue": pick})
+        elif choruses:
+            fallback = choruses[-1]
             chosen = [x["cue"] for x in hot]
-            pick = self._choose_with_spacing([e_cand], chosen, min_spacing) or e_cand
+            pick = self._choose_with_spacing([fallback], chosen, min_spacing) or fallback
             hot.append({"slot": "E", "cue": pick})
 
-        # If fewer than 5, backfill from remaining high-confidence anchors with spacing
-        if len(hot) < 5:
+        # F = First Breakdown
+        f_cand = breakdowns[0] if breakdowns else None
+        if f_cand:
+            chosen = [x["cue"] for x in hot]
+            pick = self._choose_with_spacing([f_cand], chosen, min_spacing) or f_cand
+            hot.append({"slot": "F", "cue": pick})
+
+        # G = Second Chorus (or second drop)
+        g_cand = None
+        if len(choruses) > 1:
+            g_cand = choruses[1]
+        elif len(drops) > 1:
+            g_cand = drops[1]
+        if g_cand:
+            chosen = [x["cue"] for x in hot]
+            pick = self._choose_with_spacing([g_cand], chosen, min_spacing) or g_cand
+            hot.append({"slot": "G", "cue": pick})
+
+        # H = Outro (Mix Out)
+        h_cand = outros[-1] if outros else (phrases[-1] if phrases else (cues[-1] if cues else None))
+        if h_cand:
+            chosen = [x["cue"] for x in hot]
+            pick = self._choose_with_spacing([h_cand], chosen, min_spacing) or h_cand
+            hot.append({"slot": "H", "cue": pick})
+
+        # If fewer than 8, backfill from remaining high-confidence anchors with spacing
+        if len(hot) < 8:
             used_ids = {id(x["cue"]) for x in hot}
             remaining = sorted(
                 [c for c in cues if id(c) not in used_ids],
                 key=lambda x: (-float(x.get("confidence", 0.6)), float(x.get("time", 0.0)))
             )
-            slots = [s for s in ["A", "B", "C", "D", "E"] if s not in [h["slot"] for h in hot]]
+            slots = [s for s in self.ALL_SLOTS if s not in [h["slot"] for h in hot]]
             for s in slots:
                 pick = self._choose_with_spacing(remaining, [x["cue"] for x in hot], min_spacing)
                 if not pick:
                     break
                 hot.append({"slot": s, "cue": pick})
                 remaining = [c for c in remaining if id(c) != id(pick)]
-                if len(hot) >= 5:
+                if len(hot) >= 8:
                     break
 
-        # Ensure ordered by slot A..E
-        order = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+        # Ensure ordered by slot A..H
+        order = {s: i for i, s in enumerate(self.ALL_SLOTS)}
         hot.sort(key=lambda x: order.get(x["slot"], 99))
         return {"hotcues": hot}
 

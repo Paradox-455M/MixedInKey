@@ -6,6 +6,9 @@ import MixerPanel from './MixerPanel';
 import SimilarTracksPanel from './SimilarTracksPanel';
 import LibraryTable from './LibraryTable';
 import audioEngine from './audioEngine';
+import { loadTrackCues, loadTrackLoop, saveTrackCues, saveTrackLoop, hasStoredCues, hasStoredLoop } from './cuePersistence';
+import CamelotWheel from './CamelotWheel';
+import SmartSuggestions from './SmartSuggestions';
 import './djMixView.css';
 
 const DJMixView = ({
@@ -20,11 +23,113 @@ const DJMixView = ({
     const [similarSourceTrack, setSimilarSourceTrack] = useState(null);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [audioEngineReady, setAudioEngineReady] = useState(false);
+    const [showCamelotWheel, setShowCamelotWheel] = useState(false);
+
+    // Performance state (loops and hot cues) - lifted here for sharing between MixerPanel and DJDeck
+    const [loopA, setLoopA] = useState({ active: false, start: null, end: null, size: 4 });
+    const [loopB, setLoopB] = useState({ active: false, start: null, end: null, size: 4 });
+    const [cuesA, setCuesA] = useState(new Array(8).fill(null));
+    const [cuesB, setCuesB] = useState(new Array(8).fill(null));
 
     const deckARef = useRef(null);
     const deckBRef = useRef(null);
 
     const activeTrack = activeDeckId === 'A' ? deckA : deckB;
+
+    // Load saved cues/loops when track changes, or reset if none saved
+    useEffect(() => {
+        const filePath = deckA?.file?.path;
+        if (!filePath) {
+            setLoopA({ active: false, start: null, end: null, size: 4 });
+            setCuesA(new Array(8).fill(null));
+            return;
+        }
+
+        // Try to load saved cues
+        const savedCues = loadTrackCues(filePath);
+        if (savedCues) {
+            setCuesA(savedCues);
+            console.log('[DJMixView] Loaded saved cues for Deck A');
+        } else {
+            setCuesA(new Array(8).fill(null));
+        }
+
+        // Try to load saved loop
+        const savedLoop = loadTrackLoop(filePath);
+        if (savedLoop) {
+            setLoopA({ ...savedLoop.loop, active: false }); // Load but don't auto-activate
+            console.log('[DJMixView] Loaded saved loop for Deck A');
+        } else {
+            setLoopA({ active: false, start: null, end: null, size: 4 });
+        }
+    }, [deckA?.file?.path]);
+
+    useEffect(() => {
+        const filePath = deckB?.file?.path;
+        if (!filePath) {
+            setLoopB({ active: false, start: null, end: null, size: 4 });
+            setCuesB(new Array(8).fill(null));
+            return;
+        }
+
+        // Try to load saved cues
+        const savedCues = loadTrackCues(filePath);
+        if (savedCues) {
+            setCuesB(savedCues);
+            console.log('[DJMixView] Loaded saved cues for Deck B');
+        } else {
+            setCuesB(new Array(8).fill(null));
+        }
+
+        // Try to load saved loop
+        const savedLoop = loadTrackLoop(filePath);
+        if (savedLoop) {
+            setLoopB({ ...savedLoop.loop, active: false });
+            console.log('[DJMixView] Loaded saved loop for Deck B');
+        } else {
+            setLoopB({ active: false, start: null, end: null, size: 4 });
+        }
+    }, [deckB?.file?.path]);
+
+    // Handlers for loop and cue changes
+    const handleLoopChange = useCallback((deckId, loop) => {
+        if (deckId === 'A') setLoopA(loop);
+        else setLoopB(loop);
+    }, []);
+
+    const handleCuesChange = useCallback((deckId, cues) => {
+        if (deckId === 'A') setCuesA(cues);
+        else setCuesB(cues);
+    }, []);
+
+    // Save cues to persistent storage
+    const handleSaveCues = useCallback((deckId) => {
+        const track = deckId === 'A' ? deckA : deckB;
+        const cues = deckId === 'A' ? cuesA : cuesB;
+        const loop = deckId === 'A' ? loopA : loopB;
+
+        if (!track?.file?.path) return false;
+
+        const metadata = {
+            name: track.file.name,
+            bpm: track.analysis?.bpm,
+            key: track.analysis?.key
+        };
+
+        // Save cues
+        saveTrackCues(track.file.path, cues, metadata);
+
+        // Save loop if set
+        if (loop.start !== null && loop.end !== null) {
+            saveTrackLoop(track.file.path, loop, metadata);
+        }
+
+        return true;
+    }, [deckA, deckB, cuesA, cuesB, loopA, loopB]);
+
+    // Check if track has saved cues
+    const hasSavedCuesA = deckA?.file?.path ? hasStoredCues(deckA.file.path) : false;
+    const hasSavedCuesB = deckB?.file?.path ? hasStoredCues(deckB.file.path) : false;
 
     // Initialize audio engine
     useEffect(() => {
@@ -39,22 +144,52 @@ const DJMixView = ({
         initAudio();
     }, []);
 
-    // Connect audio elements to engine
+    // Connect audio elements to engine with retry logic
     useEffect(() => {
         if (!audioEngineReady || !deckA) return;
-        const timer = setTimeout(() => {
+
+        let attempts = 0;
+        const maxAttempts = 5;
+        const delays = [100, 200, 400, 800, 1000]; // Exponential backoff
+
+        const tryConnect = () => {
             const audioEl = deckARef.current?.getAudioElement?.();
-            if (audioEl) audioEngine.connectMediaElement('A', audioEl);
-        }, 100);
+            if (audioEl) {
+                audioEngine.connectMediaElement('A', audioEl);
+                console.log('[DJMixView] Connected Deck A audio element');
+            } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(tryConnect, delays[attempts - 1]);
+            } else {
+                console.warn('[DJMixView] Failed to connect Deck A after max attempts');
+            }
+        };
+
+        const timer = setTimeout(tryConnect, delays[0]);
         return () => clearTimeout(timer);
     }, [deckA, audioEngineReady]);
 
     useEffect(() => {
         if (!audioEngineReady || !deckB) return;
-        const timer = setTimeout(() => {
+
+        let attempts = 0;
+        const maxAttempts = 5;
+        const delays = [100, 200, 400, 800, 1000]; // Exponential backoff
+
+        const tryConnect = () => {
             const audioEl = deckBRef.current?.getAudioElement?.();
-            if (audioEl) audioEngine.connectMediaElement('B', audioEl);
-        }, 100);
+            if (audioEl) {
+                audioEngine.connectMediaElement('B', audioEl);
+                console.log('[DJMixView] Connected Deck B audio element');
+            } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(tryConnect, delays[attempts - 1]);
+            } else {
+                console.warn('[DJMixView] Failed to connect Deck B after max attempts');
+            }
+        };
+
+        const timer = setTimeout(tryConnect, delays[0]);
         return () => clearTimeout(timer);
     }, [deckB, audioEngineReady]);
 
@@ -100,13 +235,25 @@ const DJMixView = ({
         if (mixSession.length === 0) return;
         try {
             const playlistName = `Mix ${new Date().toISOString().slice(0, 10)}`;
-            const tracks = mixSession.map(t => ({
-                path: t.file.path,
-                name: t.file.name,
-                artist: t.analysis.artist || 'Unknown',
-                key: t.analysis.key,
-                bpm: t.analysis.bpm
-            }));
+            const tracks = mixSession.map(t => {
+                // Find if this track has performance cues set
+                const isOnDeckA = deckA?.file?.path === t.file.path;
+                const isOnDeckB = deckB?.file?.path === t.file.path;
+                const performanceCuesForTrack = isOnDeckA ? cuesA : (isOnDeckB ? cuesB : null);
+                const performanceLoopForTrack = isOnDeckA ? loopA : (isOnDeckB ? loopB : null);
+
+                return {
+                    path: t.file.path,
+                    name: t.file.name,
+                    artist: t.analysis.artist || 'Unknown',
+                    key: t.analysis.key,
+                    bpm: t.analysis.bpm,
+                    analysis: t.analysis,
+                    // Include performance cues and loops if available
+                    performanceCues: performanceCuesForTrack,
+                    performanceLoop: performanceLoopForTrack
+                };
+            });
             const exportPath = await window.electronAPI.exportRekordboxXml({
                 playlistName, tracks, includeCuePoints: true
             });
@@ -208,8 +355,8 @@ const DJMixView = ({
                 </div>
             )}
 
-            {/* Two Decks Side by Side */}
-            <div className="decks-container">
+            {/* Stacked Decks Layout */}
+            <div className="decks-stacked">
                 <DJDeck
                     ref={deckARef}
                     id="A"
@@ -218,6 +365,8 @@ const DJMixView = ({
                     onActivate={() => setActiveDeckId('A')}
                     onLoadTrack={(file) => handleLoadTrack(file, 'A')}
                     onClear={() => setDeckA(null)}
+                    performanceLoop={loopA}
+                    performanceCues={cuesA}
                 />
                 <DJDeck
                     ref={deckBRef}
@@ -227,11 +376,36 @@ const DJMixView = ({
                     onActivate={() => setActiveDeckId('B')}
                     onLoadTrack={(file) => handleLoadTrack(file, 'B')}
                     onClear={() => setDeckB(null)}
+                    performanceLoop={loopB}
+                    performanceCues={cuesB}
                 />
             </div>
 
-            {/* BPM Match - Simple display between decks info */}
-            <BPMMatch deckA={deckA} deckB={deckB} />
+            {/* BPM Match & Camelot Wheel Row */}
+            <div className="mix-info-row">
+                <BPMMatch deckA={deckA} deckB={deckB} />
+
+                <button
+                    className={`camelot-toggle-btn ${showCamelotWheel ? 'active' : ''}`}
+                    onClick={() => setShowCamelotWheel(prev => !prev)}
+                    title="Toggle Camelot Wheel"
+                >
+                    <span className="camelot-icon">&#9673;</span>
+                    <span>Camelot</span>
+                </button>
+            </div>
+
+            {/* Camelot Wheel Panel */}
+            {showCamelotWheel && (
+                <div className="camelot-panel">
+                    <CamelotWheel
+                        currentKeyA={deckA?.analysis?.key}
+                        currentKeyB={deckB?.analysis?.key}
+                        size={180}
+                        showLabels={true}
+                    />
+                </div>
+            )}
 
             {/* Mixer Panel - Tabbed controls for EQ, FX, Performance */}
             <MixerPanel
@@ -239,7 +413,26 @@ const DJMixView = ({
                 deckBRef={deckBRef}
                 deckATrack={deckA}
                 deckBTrack={deckB}
+                loopA={loopA}
+                loopB={loopB}
+                cuesA={cuesA}
+                cuesB={cuesB}
+                onLoopChange={handleLoopChange}
+                onCuesChange={handleCuesChange}
+                onSaveCues={handleSaveCues}
+                hasSavedCuesA={hasSavedCuesA}
+                hasSavedCuesB={hasSavedCuesB}
             />
+
+            {/* Smart Suggestions */}
+            {activeTrack && (
+                <SmartSuggestions
+                    sourceTrack={activeTrack}
+                    allTracks={analyzedTracks}
+                    onSelectTrack={handleLibraryTrackSelect}
+                    maxSuggestions={5}
+                />
+            )}
 
             {/* Library Section */}
             <div className="mix-library-section">

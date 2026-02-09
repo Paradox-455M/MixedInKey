@@ -19,6 +19,7 @@ import './loudnessIndicator.css';
 import './trackNotes.css';
 import { getKeyColor } from './keyUtils';
 import LoudnessIndicator from './LoudnessIndicator';
+import EnergySparkline from './EnergySparkline';
 
 // Pre-computed Camelot wheel compatibility map for O(1) lookups
 const COMPATIBLE_KEYS_MAP = new Map();
@@ -196,15 +197,13 @@ const LibraryTable = ({
                     </span>
                 </div>
                 <div className="col-energy">
-                    <div className="energy-bar">
-                        <div
-                            className="energy-fill"
-                            style={{
-                                width: `${(track.analysis.energy_analysis?.energy_level || 5) * 10}%`,
-                                backgroundColor: isCompatible ? '#10b981' : '#8b5cf6'
-                            }}
-                        />
-                    </div>
+                    <EnergySparkline
+                        energyData={track.analysis.energy_analysis?.energy_curve}
+                        energyLevel={track.analysis.energy_analysis?.energy_level || 5}
+                        width={60}
+                        height={20}
+                        isCompatible={isCompatible}
+                    />
                 </div>
                 <div className="col-loudness">
                     <LoudnessIndicator

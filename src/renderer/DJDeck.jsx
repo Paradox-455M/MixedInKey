@@ -1,13 +1,16 @@
 // Add audio logic to DJDeck
 import React, { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Music, X, Upload, Play, Pause, ZoomIn, ZoomOut, Flag } from 'lucide-react';
+import { Music, X, Upload, Play, Pause, ZoomIn, ZoomOut, Flag, Crosshair, MoveHorizontal } from 'lucide-react';
 import WaveformCanvas from './WaveformCanvas';
+import WaveformOverview from './WaveformOverview';
 import CuePointEditor from './CuePointEditor';
 import { getKeyColor } from './keyUtils';
 import './cueEditor.css';
 
 const ZOOM_LEVELS = [1, 2, 4, 8];
+
+const PAD_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 const DJDeck = forwardRef(({
     id,
@@ -15,7 +18,9 @@ const DJDeck = forwardRef(({
     isActive,
     onActivate,
     onLoadTrack,
-    onClear
+    onClear,
+    performanceLoop,  // { active, start, end, size } from MixerPanel
+    performanceCues   // Array of 8 cue objects from MixerPanel
 }, ref) => {
     const [hoveredCue, setHoveredCue] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -23,10 +28,35 @@ const DJDeck = forwardRef(({
     const [zoomLevel, setZoomLevel] = useState(1); // 1x, 2x, 4x, 8x
     const [showCueEditor, setShowCueEditor] = useState(false);
     const [customCues, setCustomCues] = useState([]); // User-added cue points
+    const [scrollMode, setScrollMode] = useState(false); // Waveform scrolls, playhead centered
+    const [quantizeEnabled, setQuantizeEnabled] = useState(false); // Snap to beats
+    const [renderMode, setRenderMode] = useState('rgb'); // 'rgb' | 'single'
+    const [waveformWidth, setWaveformWidth] = useState(600); // Dynamic width
     const deckRef = useRef(null);
     const audioRef = useRef(null);
+    const waveformContainerRef = useRef(null);
     const currentTimeRef = useRef(0);  // Real-time tracking without re-renders
     const updateIntervalRef = useRef(null);
+
+    // Measure waveform container width for responsive rendering
+    useEffect(() => {
+        const container = waveformContainerRef.current;
+        if (!container) return;
+
+        const updateWidth = () => {
+            const width = container.clientWidth;
+            if (width > 0) setWaveformWidth(width);
+        };
+
+        // Initial measurement
+        updateWidth();
+
+        // Resize observer for dynamic updates
+        const resizeObserver = new ResizeObserver(updateWidth);
+        resizeObserver.observe(container);
+
+        return () => resizeObserver.disconnect();
+    }, [track]);
 
     // Reset state when track changes
     useEffect(() => {
@@ -35,6 +65,7 @@ const DJDeck = forwardRef(({
         setZoomLevel(1);
         setShowCueEditor(false);
         setCustomCues([]);
+        // Keep scroll mode, quantize, and render mode preferences
         currentTimeRef.current = 0;
         if (audioRef.current) {
             audioRef.current.pause();
@@ -278,6 +309,27 @@ const DJDeck = forwardRef(({
         setHoveredCue(null);
     };
 
+    // Snap time to nearest beat if quantize is enabled
+    const quantizeTime = useCallback((time) => {
+        if (!quantizeEnabled) return time;
+        const downbeats = track?.analysis?.downbeats || [];
+        if (downbeats.length === 0) return time;
+
+        // Find nearest downbeat
+        let nearestBeat = downbeats[0];
+        let minDiff = Math.abs(time - nearestBeat);
+
+        for (const beat of downbeats) {
+            const diff = Math.abs(time - beat);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearestBeat = beat;
+            }
+        }
+
+        return nearestBeat;
+    }, [quantizeEnabled, track?.analysis?.downbeats]);
+
     const handleWaveformClick = useCallback((e) => {
         e.stopPropagation();
         if (!track || !audioRef.current || !deckRef.current) return;
@@ -287,16 +339,41 @@ const DJDeck = forwardRef(({
         const width = rect.width;
         const duration = track.duration || track.analysis?.duration || 300;
 
-        const seekTime = (x / width) * duration;
+        let seekTime = (x / width) * duration;
+
+        // Apply quantize if enabled
+        seekTime = quantizeTime(seekTime);
+
         audioRef.current.currentTime = seekTime;
         currentTimeRef.current = seekTime;
         setDisplayTime(seekTime);
-    }, [track]);
+    }, [track, quantizeTime]);
+
+    // Handle seek from overview waveform
+    const handleOverviewSeek = useCallback((time) => {
+        if (!audioRef.current || !track) return;
+        const quantizedTime = quantizeTime(time);
+        audioRef.current.currentTime = quantizedTime;
+        currentTimeRef.current = quantizedTime;
+        setDisplayTime(quantizedTime);
+    }, [track, quantizeTime]);
 
     // Memoize waveform data to prevent unnecessary WaveformCanvas re-renders
     const memoizedWaveformData = useMemo(
         () => track?.analysis?.waveform_data || [],
         [track?.analysis?.waveform_data]
+    );
+
+    // Memoize RGB waveform data
+    const memoizedRgbWaveformData = useMemo(
+        () => track?.analysis?.rgb_waveform_data || null,
+        [track?.analysis?.rgb_waveform_data]
+    );
+
+    // Get track duration
+    const trackDuration = useMemo(
+        () => track?.duration || track?.analysis?.duration || 0,
+        [track?.duration, track?.analysis?.duration]
     );
 
     return (
@@ -352,6 +429,26 @@ const DJDeck = forwardRef(({
                                 {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
                             </button>
                             <button
+                                className={`deck-mode-btn ${quantizeEnabled ? 'active quantize' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setQuantizeEnabled(prev => !prev);
+                                }}
+                                title={quantizeEnabled ? 'Quantize ON - Click to disable' : 'Quantize OFF - Click to enable'}
+                            >
+                                Q
+                            </button>
+                            <button
+                                className={`deck-mode-btn ${scrollMode ? 'active scroll' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setScrollMode(prev => !prev);
+                                }}
+                                title={scrollMode ? 'Scroll Mode - Playhead centered' : 'Static Mode - Playhead moves'}
+                            >
+                                <MoveHorizontal size={14} />
+                            </button>
+                            <button
                                 className={`cue-editor-toggle ${showCueEditor ? 'active' : ''}`}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -373,10 +470,30 @@ const DJDeck = forwardRef(({
                         </div>
                     </div>
 
+                    {/* Overview Waveform - shows when zoomed */}
+                    {zoomLevel > 1 && (
+                        <WaveformOverview
+                            waveformData={memoizedWaveformData}
+                            rgbWaveformData={memoizedRgbWaveformData}
+                            renderMode={renderMode}
+                            width={waveformWidth}
+                            height={30}
+                            color={id === 'A' ? '#8b5cf6' : '#ec4899'}
+                            currentTime={displayTime}
+                            duration={trackDuration}
+                            zoom={zoomLevel}
+                            viewportStart={viewportStart}
+                            onSeek={handleOverviewSeek}
+                        />
+                    )}
+
                     {/* Waveform Area */}
                     <div
                         className="deck-waveform-container"
-                        ref={deckRef}
+                        ref={(el) => {
+                            waveformContainerRef.current = el;
+                            deckRef.current = el;
+                        }}
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
                         onClick={handleWaveformClick}
@@ -385,11 +502,16 @@ const DJDeck = forwardRef(({
                     >
                         <WaveformCanvas
                             waveformData={memoizedWaveformData}
-                            width={600}
+                            rgbWaveformData={memoizedRgbWaveformData}
+                            renderMode={renderMode}
+                            width={waveformWidth}
                             height={120}
                             color={id === 'A' ? '#8b5cf6' : '#ec4899'}
                             zoom={zoomLevel}
                             viewportStart={viewportStart}
+                            scrollMode={scrollMode}
+                            currentTime={displayTime}
+                            duration={trackDuration}
                         />
 
                         {/* Zoom Controls */}
@@ -411,13 +533,23 @@ const DJDeck = forwardRef(({
                             >
                                 <ZoomIn size={14} />
                             </button>
+                            <button
+                                className={`waveform-mode-btn ${renderMode === 'rgb' ? 'active' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRenderMode(prev => prev === 'rgb' ? 'single' : 'rgb');
+                                }}
+                                title={renderMode === 'rgb' ? 'RGB Waveform' : 'Single Color Waveform'}
+                            >
+                                RGB
+                            </button>
                         </div>
 
-                        {/* Playhead - always at center when zoomed */}
+                        {/* Playhead - always at center when zoomed or in scroll mode */}
                         <div
-                            className="deck-playhead"
+                            className={`deck-playhead ${scrollMode ? 'scroll-mode' : ''}`}
                             style={{
-                                left: zoomLevel > 1 ? '50%' : `${(displayTime / (track.duration || track.analysis?.duration || 1)) * 100}%`
+                                left: (zoomLevel > 1 || scrollMode) ? '50%' : `${(displayTime / (trackDuration || 1)) * 100}%`
                             }}
                         />
                         
@@ -447,7 +579,11 @@ const DJDeck = forwardRef(({
                                 const typeLower = (cue.type || '').toLowerCase();
 
                                 if (typeLower.includes('drop') || nameLower.includes('drop')) cueClass = 'type-drop';
+                                else if (typeLower.includes('chorus') || nameLower.includes('chorus')) cueClass = 'type-chorus';
+                                else if (typeLower.includes('build') || nameLower.includes('build')) cueClass = 'type-build';
                                 else if (typeLower.includes('break') || nameLower.includes('break')) cueClass = 'type-breakdown';
+                                else if (typeLower.includes('hook') || nameLower.includes('hook')) cueClass = 'type-hook';
+                                else if (typeLower.includes('vocal') || nameLower.includes('vocal')) cueClass = 'type-vocal';
                                 else if (typeLower.includes('intro') || nameLower.includes('intro')) cueClass = 'type-intro';
                                 else if (typeLower.includes('outro') || nameLower.includes('outro')) cueClass = 'type-outro';
 
@@ -457,6 +593,25 @@ const DJDeck = forwardRef(({
                                         className={`deck-cue-marker ${cueClass}`}
                                         style={{ left: `${leftPct}%` }}
                                     />
+                                );
+                            })}
+                        </div>
+
+                        {/* Song Structure Overlay */}
+                        <div className="deck-structure-overlay">
+                            {(track.analysis?.song_structure || []).map((section, idx) => {
+                                const dur = track.duration || track.analysis?.duration || 300;
+                                const startPct = (section.start / dur) * 100;
+                                const widthPct = (((section.end || section.start) - section.start) / dur) * 100;
+                                return (
+                                    <div
+                                        key={`structure-${idx}`}
+                                        className={`structure-section section-${section.type}`}
+                                        style={{ left: `${startPct}%`, width: `${widthPct}%` }}
+                                        title={`${section.type}${section.instance > 1 ? ' ' + section.instance : ''}`}
+                                    >
+                                        <span className="structure-label">{section.type}</span>
+                                    </div>
                                 );
                             })}
                         </div>
@@ -523,6 +678,60 @@ const DJDeck = forwardRef(({
                                 );
                             })}
                         </div>
+
+                        {/* Performance Loop Overlay */}
+                        {performanceLoop?.active && performanceLoop.start !== null && performanceLoop.end !== null && (
+                            <div className="deck-performance-loop-overlay">
+                                {(() => {
+                                    const duration = track.duration || track.analysis?.duration || 300;
+                                    const startPct = (performanceLoop.start / duration) * 100;
+                                    const endPct = (performanceLoop.end / duration) * 100;
+                                    const widthPct = endPct - startPct;
+                                    return (
+                                        <div
+                                            className="performance-loop-region active"
+                                            style={{
+                                                left: `${startPct}%`,
+                                                width: `${widthPct}%`
+                                            }}
+                                            title={`${performanceLoop.size}-beat loop`}
+                                        >
+                                            <div className="loop-bracket loop-start" />
+                                            <div className="loop-bracket loop-end" />
+                                            <span className="loop-size-label">{performanceLoop.size}</span>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+
+                        {/* Performance Hot Cues Overlay */}
+                        {performanceCues && (
+                            <div className="deck-performance-cues-overlay">
+                                {performanceCues.map((cue, idx) => {
+                                    if (!cue) return null;
+                                    const duration = track.duration || track.analysis?.duration || 300;
+                                    const leftPct = (cue.time / duration) * 100;
+                                    const color = PAD_COLORS[idx] || '#ef4444';
+                                    return (
+                                        <div
+                                            key={`perf-cue-${idx}`}
+                                            className="performance-cue-marker"
+                                            style={{
+                                                left: `${leftPct}%`,
+                                                '--cue-color': color
+                                            }}
+                                            title={`Hot Cue ${idx + 1} - ${formatTime(cue.time)}`}
+                                        >
+                                            <div className="cue-flag">
+                                                <span className="cue-number">{idx + 1}</span>
+                                            </div>
+                                            <div className="cue-line" />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
 
                         {/* Hover Tooltip */}
                         {hoveredCue && (

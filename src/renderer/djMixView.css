@@ -37,30 +37,43 @@
     border-color: var(--accent-primary, #8b5cf6);
 }
 
-/* Decks Container - Two decks side by side */
-.decks-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
+/* Decks Container - Stacked Layout */
+.decks-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     flex-shrink: 0;
 }
 
-/* Individual Deck */
+/* Individual Deck - Full Width Stacked - COMPACT */
 .dj-deck {
     background: var(--bg-secondary, #18181b);
     border: 2px solid var(--border-primary, #27272a);
-    border-radius: 12px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    min-height: 200px;
-    max-height: 280px;
-    transition: border-color 0.2s ease;
+    min-height: 130px;
+    transition: all 0.2s ease;
 }
 
 .dj-deck.active {
     border-color: #8b5cf6;
-    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.03);
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.25), 0 0 0 1px rgba(139, 92, 246, 0.3);
+}
+
+/* Color-coded deck badges */
+.dj-deck[data-deck="A"] .deck-id-badge {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.dj-deck[data-deck="B"] .deck-id-badge {
+    background: rgba(236, 72, 153, 0.15);
+    color: #f472b6;
+    border: 1px solid rgba(236, 72, 153, 0.3);
 }
 
 .deck-empty-state {
@@ -223,10 +236,11 @@
     color: white;
 }
 
-/* Waveform Container */
+/* Waveform Container - Optimized height */
 .deck-waveform-container {
     flex: 1;
-    min-height: 80px;
+    min-height: 70px;
+    max-height: 100px;
     background: #0a0a0f;
     border-radius: 6px;
     position: relative;
@@ -303,7 +317,8 @@
 .deck-cues-overlay,
 .deck-phrases-overlay,
 .deck-loops-overlay,
-.deck-beatgrid-overlay {
+.deck-beatgrid-overlay,
+.deck-structure-overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -323,6 +338,296 @@
 .deck-cue-marker.type-intro { background: #10b981; }
 .deck-cue-marker.type-outro { background: #f59e0b; }
 .deck-cue-marker.type-breakdown { background: #3b82f6; }
+.deck-cue-marker.type-chorus { background: #8b5cf6; }
+.deck-cue-marker.type-build { background: #eab308; }
+.deck-cue-marker.type-vocal { background: #ec4899; }
+.deck-cue-marker.type-hook { background: #a855f7; }
+
+/* Song Structure Overlay */
+.deck-structure-overlay {
+    z-index: 0;
+}
+
+.structure-section {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    opacity: 0.15;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.structure-label {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding-bottom: 2px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.section-intro     { background: #10b981; }
+.section-verse     { background: #6366f1; }
+.section-chorus    { background: #f97316; }
+.section-bridge    { background: #06b6d4; }
+.section-breakdown { background: #3b82f6; }
+.section-build     { background: #eab308; }
+.section-drop      { background: #ef4444; }
+.section-outro     { background: #f59e0b; }
+
+/* ================================================
+   PERFORMANCE LOOP OVERLAY
+   ================================================ */
+.deck-performance-loop-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 15;
+}
+
+.performance-loop-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(34, 197, 94, 0.15);
+    border-left: 2px solid #22c55e;
+    border-right: 2px solid #22c55e;
+}
+
+.performance-loop-region.active {
+    background: rgba(34, 197, 94, 0.25);
+    animation: loopPulse 1s ease-in-out infinite;
+}
+
+@keyframes loopPulse {
+    0%, 100% { background: rgba(34, 197, 94, 0.2); }
+    50% { background: rgba(34, 197, 94, 0.35); }
+}
+
+.loop-bracket {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+}
+
+.loop-bracket.loop-start {
+    left: -2px;
+    background: linear-gradient(to right, #22c55e, transparent);
+}
+
+.loop-bracket.loop-end {
+    right: -2px;
+    background: linear-gradient(to left, #22c55e, transparent);
+}
+
+.loop-size-label {
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #22c55e;
+    color: #000;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 2px;
+}
+
+/* ================================================
+   PERFORMANCE HOT CUES OVERLAY
+   ================================================ */
+.deck-performance-cues-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 16;
+}
+
+.performance-cue-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+
+.performance-cue-marker .cue-flag {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translateX(-50%);
+    background: var(--cue-color, #ef4444);
+    padding: 1px 3px;
+    border-radius: 0 0 3px 3px;
+    z-index: 2;
+}
+
+.performance-cue-marker .cue-number {
+    font-size: 8px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+}
+
+.performance-cue-marker .cue-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 2px;
+    background: var(--cue-color, #ef4444);
+    transform: translateX(-50%);
+    box-shadow: 0 0 4px var(--cue-color, #ef4444);
+}
+
+/* ================================================
+   PHRASE MARKERS OVERLAY
+   ================================================ */
+.deck-phrases-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.deck-phrase-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    opacity: 0.7;
+}
+
+.deck-phrase-marker.phrase-8bar {
+    background: #f59e0b;
+    box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+}
+
+.deck-phrase-marker.phrase-8bar::before {
+    content: '8';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 7px;
+    font-weight: 700;
+    color: #f59e0b;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+.deck-phrase-marker.phrase-16bar {
+    background: #22c55e;
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+}
+
+.deck-phrase-marker.phrase-16bar::before {
+    content: '16';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 7px;
+    font-weight: 700;
+    color: #22c55e;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+.deck-phrase-marker.phrase-32bar {
+    background: #8b5cf6;
+    width: 3px;
+    box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+}
+
+.deck-phrase-marker.phrase-32bar::before {
+    content: '32';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 7px;
+    font-weight: 700;
+    color: #8b5cf6;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+/* Loop Markers Overlay */
+.deck-loops-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.deck-loop-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 1px solid rgba(59, 130, 246, 0.5);
+    border-right: 1px solid rgba(59, 130, 246, 0.5);
+}
+
+.deck-loop-region .loop-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 8px;
+    font-weight: 700;
+    color: #3b82f6;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 2px 4px;
+    border-radius: 2px;
+    opacity: 0.8;
+}
+
+.deck-loop-region.loop-4bar { background: rgba(59, 130, 246, 0.15); }
+.deck-loop-region.loop-8bar { background: rgba(34, 197, 94, 0.15); }
+.deck-loop-region.loop-16bar { background: rgba(139, 92, 246, 0.15); }
+
+/* Beat Grid Overlay */
+.deck-beatgrid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.4;
+}
+
+.deck-beat-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.deck-beat-marker.downbeat {
+    background: rgba(255, 255, 255, 0.25);
+}
 
 /* Cue Tooltip */
 .cue-tooltip {
@@ -362,6 +667,66 @@
     border-radius: 10px;
     padding: 12px;
     flex-shrink: 0;
+}
+
+/* BPM Match & Camelot Row */
+.mix-info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.camelot-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary, #27272a);
+    border: 1px solid var(--border-primary, #3f3f46);
+    border-radius: 6px;
+    color: var(--text-secondary, #a1a1aa);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.camelot-toggle-btn:hover {
+    background: var(--bg-secondary, #3f3f46);
+    border-color: var(--accent-primary, #8b5cf6);
+}
+
+.camelot-toggle-btn.active {
+    background: var(--accent-primary, #8b5cf6);
+    border-color: var(--accent-primary, #8b5cf6);
+    color: #fff;
+}
+
+.camelot-icon {
+    font-size: 14px;
+}
+
+.camelot-panel {
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 10px;
+    flex-shrink: 0;
+    animation: fadeSlideIn 0.2s ease;
+}
+
+@keyframes fadeSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* BPM Match - Compact */
@@ -423,13 +788,13 @@
     display: none; /* Hidden for cleaner layout */
 }
 
-/* ===== LIBRARY SECTION ===== */
+/* ===== LIBRARY SECTION - Compact ===== */
 .mix-library-section {
     flex: 1;
-    min-height: 200px;
+    min-height: 150px;
     background: var(--bg-secondary, #18181b);
     border-radius: 10px;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid var(--border-primary, #27272a);
     display: flex;
     flex-direction: column;
@@ -588,4 +953,375 @@
     .shortcuts-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Responsive height adjustments */
+@media (max-height: 800px) {
+    .dj-deck {
+        min-height: 120px;
+        padding: 8px;
+    }
+
+    .deck-waveform-container {
+        min-height: 60px;
+        max-height: 80px;
+    }
+
+    .mix-library-section {
+        min-height: 120px;
+    }
+}
+
+@media (max-height: 700px) {
+    .dj-deck {
+        min-height: 100px;
+        padding: 6px;
+    }
+
+    .deck-waveform-container {
+        min-height: 50px;
+        max-height: 70px;
+    }
+
+    .mix-library-section {
+        min-height: 100px;
+    }
+
+    .decks-stacked {
+        gap: 6px;
+    }
+}
+
+/* ================================================
+   ENHANCED WAVEFORM FEATURES - RGB, SCROLL, QUANTIZE
+   ================================================ */
+
+/* RGB Waveform Color Variables */
+:root {
+    --waveform-low: #ef4444;   /* Red - bass */
+    --waveform-mid: #22c55e;   /* Green - mids */
+    --waveform-high: #3b82f6;  /* Blue - highs */
+    --quantize-active: #f59e0b;  /* Orange */
+    --scroll-active: #8b5cf6;    /* Purple */
+}
+
+/* Mode Toggle Buttons (Quantize, Scroll) */
+.deck-mode-btn {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    transition: all 0.15s;
+}
+
+.deck-mode-btn:hover {
+    background: #27272a;
+    color: #a1a1aa;
+    border-color: #52525b;
+}
+
+.deck-mode-btn.active.quantize {
+    background: var(--quantize-active);
+    border-color: var(--quantize-active);
+    color: #000;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.deck-mode-btn.active.scroll {
+    background: var(--scroll-active);
+    border-color: var(--scroll-active);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+}
+
+/* RGB Waveform Mode Toggle */
+.waveform-mode-btn {
+    padding: 2px 6px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    color: #71717a;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: 4px;
+}
+
+.waveform-mode-btn:hover {
+    background: #27272a;
+    color: #a1a1aa;
+}
+
+.waveform-mode-btn.active {
+    background: linear-gradient(135deg, var(--waveform-low), var(--waveform-mid), var(--waveform-high));
+    border-color: transparent;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Scroll Mode Playhead */
+.deck-playhead.scroll-mode {
+    background: #fff;
+    box-shadow: 0 0 6px rgba(255,255,255,0.8), 0 0 12px rgba(139, 92, 246, 0.5);
+}
+
+/* Overview Waveform */
+.waveform-overview {
+    margin-bottom: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.overview-viewport {
+    pointer-events: none;
+}
+
+.overview-playhead {
+    pointer-events: none;
+}
+
+/* ================================================
+   BEAT JUMP CONTROLS
+   ================================================ */
+
+.beat-jump-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: #1f1f23;
+    border-radius: 6px;
+    border: 1px solid #27272a;
+}
+
+.beat-jump-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+    text-align: center;
+}
+
+.beat-jump-buttons {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.beat-jump-group {
+    display: flex;
+    align-items: center;
+    background: #27272a;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.beat-jump-btn {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: #71717a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+}
+
+.beat-jump-btn:hover {
+    background: #3f3f46;
+    color: #e4e4e7;
+}
+
+.beat-jump-btn:active {
+    background: #8b5cf6;
+    color: #fff;
+}
+
+.beat-jump-size {
+    font-size: 10px;
+    font-weight: 600;
+    color: #a1a1aa;
+    padding: 0 6px;
+    min-width: 24px;
+    text-align: center;
+}
+
+/* ================================================
+   STACKED WAVEFORM VIEW
+   ================================================ */
+
+.stacked-waveform-view {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--bg-secondary, #18181b);
+    border: 1px solid var(--border-primary, #27272a);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.stacked-deck {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stacked-deck-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+
+.deck-badge {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 10px;
+}
+
+.deck-badge.deck-a {
+    background: #8b5cf620;
+    color: #8b5cf6;
+    border: 1px solid #8b5cf640;
+}
+
+.deck-badge.deck-b {
+    background: #ec489920;
+    color: #ec4899;
+    border: 1px solid #ec489940;
+}
+
+.deck-info {
+    color: #71717a;
+    font-family: 'SF Mono', monospace;
+    font-size: 10px;
+}
+
+.stacked-waveform-container {
+    position: relative;
+    background: #0a0a0f;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.stacked-empty {
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3f3f46;
+    font-size: 11px;
+}
+
+.stacked-beatgrid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
+.stacked-beat-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.stacked-beat-marker.downbeat {
+    width: 1px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.stacked-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.stacked-playhead.deck-a {
+    background: #8b5cf6;
+    box-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+}
+
+.stacked-playhead.deck-b {
+    background: #ec4899;
+    box-shadow: 0 0 6px rgba(236, 72, 153, 0.6);
+}
+
+.stacked-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+}
+
+.stacked-time-sync {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sync-indicator {
+    font-size: 10px;
+    font-weight: 600;
+    color: #71717a;
+    padding: 2px 8px;
+    background: #1f1f23;
+    border-radius: 4px;
+}
+
+/* View Toggle Button */
+.view-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-tertiary, #27272a);
+    border: 1px solid var(--border-primary, #3f3f46);
+    border-radius: 6px;
+    color: var(--text-secondary, #a1a1aa);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-toggle-btn:hover {
+    background: var(--bg-secondary, #3f3f46);
+    border-color: var(--accent-primary, #8b5cf6);
+}
+
+.view-toggle-btn.active {
+    background: var(--accent-primary, #8b5cf6);
+    border-color: var(--accent-primary, #8b5cf6);
+    color: #fff;
+}
+
+/* Adjust deck max-height when overview is shown */
+.dj-deck.has-overview {
+    max-height: 320px;
 }

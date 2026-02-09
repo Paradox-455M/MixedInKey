@@ -1,0 +1,212 @@
+/* ================================================
+   CAMELOT WHEEL - Harmonic Mixing Visualization
+   ================================================ */
+
+.camelot-wheel-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: #1a1a1e;
+    border-radius: 8px;
+    border: 1px solid #27272a;
+}
+
+.camelot-wheel {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Center of the wheel */
+.wheel-center {
+    fill: #0f0f13;
+    stroke: #27272a;
+    stroke-width: 2;
+}
+
+/* Segment styling */
+.camelot-segment {
+    cursor: pointer;
+}
+
+.segment-path {
+    stroke: #1a1a1e;
+    stroke-width: 1.5;
+    opacity: 0.85;
+    transition: all 0.15s ease;
+}
+
+.segment-path:hover {
+    opacity: 1;
+    stroke: #fff;
+    stroke-width: 2;
+    filter: brightness(1.2);
+}
+
+.segment-path.compatible {
+    opacity: 1;
+    stroke: #22c55e;
+    stroke-width: 2;
+}
+
+.segment-path.active {
+    opacity: 1;
+    stroke: #fff;
+    stroke-width: 3;
+    filter: brightness(1.3) drop-shadow(0 0 8px currentColor);
+}
+
+.segment-path.hovered {
+    opacity: 1;
+    filter: brightness(1.25);
+}
+
+/* Segment labels */
+.segment-label {
+    font-size: 9px;
+    font-weight: 700;
+    fill: #fff;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Deck position indicators */
+.deck-indicator {
+    stroke-width: 2;
+    fill: none;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.deck-indicator.deck-a {
+    stroke: #8b5cf6;
+    filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.6));
+}
+
+.deck-indicator.deck-b {
+    stroke: #ec4899;
+    filter: drop-shadow(0 0 4px rgba(236, 72, 153, 0.6));
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+/* Legend */
+.camelot-legend {
+    display: flex;
+    gap: 16px;
+    font-size: 10px;
+    color: #a1a1aa;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.legend-dot.deck-a {
+    background: #8b5cf6;
+    box-shadow: 0 0 4px rgba(139, 92, 246, 0.5);
+}
+
+.legend-dot.deck-b {
+    background: #ec4899;
+    box-shadow: 0 0 4px rgba(236, 72, 153, 0.5);
+}
+
+/* Hover info tooltip */
+.camelot-hover-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 4px;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.hover-key {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e4e4e7;
+}
+
+.hover-musical {
+    font-size: 10px;
+    color: #a1a1aa;
+}
+
+/* Compact version */
+.camelot-wheel-container.compact {
+    padding: 8px;
+}
+
+.camelot-wheel-container.compact .segment-label {
+    font-size: 7px;
+}
+
+.camelot-wheel-container.compact .camelot-legend {
+    font-size: 9px;
+    gap: 10px;
+}
+
+/* Embedded in sidebar or panel */
+.camelot-wheel-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.camelot-wheel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+}
+
+.camelot-wheel-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52525b;
+    letter-spacing: 0.1em;
+}
+
+.camelot-wheel-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.camelot-filter-btn {
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #71717a;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.camelot-filter-btn:hover {
+    background: #27272a;
+    color: #e4e4e7;
+}
+
+.camelot-filter-btn.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: #fff;
+}

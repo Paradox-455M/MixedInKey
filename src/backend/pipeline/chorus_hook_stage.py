@@ -50,7 +50,8 @@ class ChorusHookStage:
     # Core Detection
     # -------------------------------------------
 
-    def _detect(self, y, sr, beats, hop, features=None) -> Tuple[Optional[float], Optional[float]]:
+    def _detect(self, y, sr, beats, hop, features=None) -> Tuple[List[float], List[float]]:
+        """Detect ALL choruses and hooks (multi-instance)."""
         import librosa
         import scipy.ndimage as ndi
         from scipy import signal
@@ -60,7 +61,6 @@ class ChorusHookStage:
             if features and features.get('y_harm') is not None:
                 y_harm = features['y_harm']
             else:
-                # Fallback: compute HPSS
                 y_harm, _ = librosa.effects.hpss(y)
 
             # Harmonic centroid motion
@@ -95,7 +95,7 @@ class ChorusHookStage:
             # Combined score
             n = min(len(cd), len(ce), len(nv), len(rd))
             if n < 20:
-                return (None, None)
+                return ([], [])
 
             score = cd[:n] + ce[:n] + 0.6 * nv[:n] + 0.4 * rd[:n]
 
@@ -104,53 +104,60 @@ class ChorusHookStage:
                 np.arange(len(score)), sr=sr, hop_length=hop
             )
 
+            # BPM-adaptive parameters
+            bpm = 120.0
+            if features and features.get('beat_times') is not None:
+                bt = np.array(features['beat_times'])
+                if len(bt) > 2:
+                    median_ibi = float(np.median(np.diff(bt)))
+                    if median_ibi > 0:
+                        bpm = 60.0 / median_ibi
+
+            bar_seconds = 4.0 * 60.0 / max(bpm, 60.0)
+            min_chorus_time = max(10.0, 4.0 * bar_seconds)  # 4 bars minimum
+            min_gap = max(8.0, 8.0 * bar_seconds)  # 8 bars between detections
+
             # Peak detection
+            peak_distance = max(6, int(min_gap / (float(hop) / sr)))
             peaks, props = signal.find_peaks(
                 score,
                 height=0.55 * (np.max(score) if np.size(score) > 0 else 1.0),
-                distance=6  # avoid micro-peaks
+                distance=peak_distance
             )
             if len(peaks) == 0:
-                return (None, None)
+                return ([], [])
 
             # -------------------------------------------
-            # Chorus detection
+            # Multi-chorus detection — find ALL peaks above threshold after min_chorus_time
             # -------------------------------------------
-            # First strong peak > 20s (avoids intro noise)
-            chorus_t = None
+            choruses = []
+            hooks = []
+            chorus_threshold = 0.70 * np.max(score)
+            hook_threshold = 0.50 * np.max(score)
+
             for p in peaks:
                 t = float(score_times[p])
-                if t > 20.0:
-                    chorus_t = t
-                    break
+                s = float(score[p])
+                if t < min_chorus_time:
+                    continue
 
-            if chorus_t is None:
-                return (None, None)
+                # Check min gap from existing choruses
+                if s >= chorus_threshold:
+                    if all(abs(t - ct) >= min_gap for ct in choruses):
+                        choruses.append(t)
+                elif s >= hook_threshold:
+                    if all(abs(t - ht) >= min_gap for ht in hooks):
+                        if all(abs(t - ct) >= min_gap * 0.5 for ct in choruses):
+                            hooks.append(t)
 
-            # -------------------------------------------
-            # Hook detection
-            # -------------------------------------------
-            # Later peaks, minimum 12s after chorus
-            later = [
-                p for p in peaks
-                if score_times[p] > chorus_t + 12.0
-            ]
+            # Snap all to beat-grid
+            choruses = [self._snap_to_beat(t, beats) for t in choruses]
+            hooks = [self._snap_to_beat(t, beats) for t in hooks]
 
-            hook_t = None
-            if later:
-                # Highest scoring later peak
-                best_idx = later[np.argmax(score[later])]
-                hook_t = float(score_times[best_idx])
-
-            # Snap both to beat-grid
-            chorus_t = self._snap_to_beat(chorus_t, beats)
-            if hook_t is not None:
-                hook_t = self._snap_to_beat(hook_t, beats)
-
-            return chorus_t, hook_t
+            return choruses, hooks
 
         except Exception:
-            return None, None
+            return [], []
 
     # -------------------------------------------
     # Public API
@@ -168,40 +175,47 @@ class ChorusHookStage:
             if features and features.get('beat_times') is not None:
                 beat_times = features['beat_times']
             else:
-                # Fallback: compute beat grid
                 _, beat_frames = librosa.beat.beat_track(
                     y=y, sr=sr, hop_length=hop, units='frames', trim=False
                 )
                 beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
 
-            chorus_t, hook_t = self._detect(y, sr, beat_times, hop, features)
+            choruses, hooks = self._detect(y, sr, beat_times, hop, features)
 
         except Exception:
-            chorus_t, hook_t = None, None
+            choruses, hooks = [], []
 
-        # Build cues
+        # Build cues with instance numbering
         cues: List[Dict[str, Any]] = []
+        chorus_t = choruses[0] if choruses else None
+        hook_t = hooks[0] if hooks else None
 
-        if chorus_t is not None:
+        for i, t in enumerate(choruses):
+            instance = i + 1
             cues.append({
-                "name": "Chorus",
-                "time": float(chorus_t),
+                "name": f"Chorus {instance}" if len(choruses) > 1 else "Chorus",
+                "time": float(t),
                 "type": "chorus",
-                "confidence": 0.85,
-                "reason": "chorus_hook_AI"
+                "confidence": max(0.70, 0.85 - i * 0.05),
+                "reason": "chorus_hook_AI",
+                "instance": instance,
             })
 
-        if hook_t is not None:
+        for i, t in enumerate(hooks):
+            instance = i + 1
             cues.append({
-                "name": "Hook",
-                "time": float(hook_t),
+                "name": f"Hook {instance}" if len(hooks) > 1 else "Hook",
+                "time": float(t),
                 "type": "hook",
-                "confidence": 0.80,
-                "reason": "chorus_hook_AI"
+                "confidence": max(0.65, 0.80 - i * 0.05),
+                "reason": "chorus_hook_AI",
+                "instance": instance,
             })
 
         return {
             "chorus": chorus_t,
             "hook": hook_t,
-            "cues": cues
+            "choruses": choruses,
+            "hooks": hooks,
+            "cues": cues,
         }
